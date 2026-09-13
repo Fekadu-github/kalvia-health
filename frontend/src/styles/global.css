@@ -23,13 +23,17 @@ html, body, #root {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: url("/kalvia-watermark.png");
+  background-repeat: no-repeat;
+  background-position: center 38%;
+  background-size: min(640px, 70vw) auto;
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.5;
 }
-
 h1, h2, h3 {
   font-family: var(--font-display);
   font-weight: 500;
