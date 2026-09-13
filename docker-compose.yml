@@ -1,0 +1,33 @@
+version: "3.9"
+
+# Phase 1: Postgres + backend only. Jitsi (video) and Asterisk/Kannel
+# (voice/SMS) get added as services here in later phases — the backend
+# code won't need to change, just new services + env vars.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: care
+      POSTGRES_PASSWORD: care
+      POSTGRES_DB: care_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - care_db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AUTH_MODE: dev
+      DATABASE_URL: postgresql://care:care@db:5432/care_platform
+      JWT_SECRET: dev-secret-change-in-production
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+volumes:
+  care_db_data:
