@@ -23,6 +23,11 @@ export default function AppShell() {
               My profile
             </NavLink>
           )}
+          {session?.role === "admin" && (
+            <NavLink to="/admin/providers" className={({ isActive }) => (isActive ? "active" : "")}>
+              Create provider
+            </NavLink>
+          )}
         </nav>
         <div className="sidebar-footer">
           <div>{session?.fullName}</div>

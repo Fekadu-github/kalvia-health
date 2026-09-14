@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, Appointment, CaseNote, ConsultationType, Prescription, ApiError } from "../api";
+import { api, Appointment, CaseNote, ConsultationType, Prescription, Triage, ApiError } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 function formatWhen(iso: string) {
@@ -11,6 +11,201 @@ function formatWhen(iso: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function TriageSection({ caseId }: { caseId: string }) {
+  const { session } = useAuth();
+  const isProvider = session?.role === "provider";
+  const [triage, setTriage] = useState<Triage | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [patientName, setPatientName] = useState("");
+  const [age, setAge] = useState("");
+  const [symptoms, setSymptoms] = useState("");
+  const [duration, setDuration] = useState("");
+  const [severity, setSeverity] = useState("");
+  const [medicalHistory, setMedicalHistory] = useState("");
+  const [medications, setMedications] = useState("");
+  const [allergies, setAllergies] = useState("");
+  const [additionalNotes, setAdditionalNotes] = useState("");
+  const [markComplete, setMarkComplete] = useState(false);
+
+  function fillFormFrom(t: Triage) {
+    setPatientName(t.patient_name);
+    setAge(String(t.age));
+    setSymptoms(t.symptoms);
+    setDuration(t.duration);
+    setSeverity(t.severity || "");
+    setMedicalHistory(t.medical_history || "");
+    setMedications(t.medications || "");
+    setAllergies(t.allergies || "");
+    setAdditionalNotes(t.additional_notes || "");
+  }
+
+  function load() {
+    if (!session) return;
+    api
+      .getTriage(session.token, caseId)
+      .then((t) => {
+        setTriage(t);
+        if (t) fillFormFrom(t);
+      })
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load triage"))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, [session, caseId]);
+
+  async function handleSubmit() {
+    if (!session || !patientName.trim() || !age || !symptoms.trim() || !duration.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.upsertTriage(session.token, caseId, {
+        patient_name: patientName,
+        age: Number(age),
+        symptoms,
+        duration,
+        severity: severity || undefined,
+        medical_history: medicalHistory || undefined,
+        medications: medications || undefined,
+        allergies: allergies || undefined,
+        additional_notes: additionalNotes || undefined,
+        mark_complete: markComplete,
+      });
+      setShowForm(false);
+      setMarkComplete(false);
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not save triage");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const canSubmit = patientName.trim() && age && symptoms.trim() && duration.trim();
+
+  return (
+    <div>
+      <div className="section-header">
+        <h3>Triage</h3>
+        <button
+          className="btn-outline btn"
+          onClick={() => {
+            setShowForm((v) => !v);
+            if (triage) fillFormFrom(triage);
+          }}
+        >
+          {showForm ? "Cancel" : triage ? "Edit" : "Start triage"}
+        </button>
+      </div>
+
+      {error && <p className="error-text">{error}</p>}
+
+      {showForm && (
+        <div className="inline-form">
+          <div className="form-row">
+            <div className="field">
+              <label htmlFor="patientName">Patient name *</label>
+              <input id="patientName" value={patientName} onChange={(e) => setPatientName(e.target.value)} required />
+            </div>
+            <div className="field">
+              <label htmlFor="age">Age *</label>
+              <input id="age" type="number" min={0} max={129} value={age} onChange={(e) => setAge(e.target.value)} required />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="symptoms">Symptoms *</label>
+            <textarea id="symptoms" rows={2} value={symptoms} onChange={(e) => setSymptoms(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="duration">Duration *</label>
+            <input
+              id="duration"
+              placeholder="e.g. 3 days"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              required
+            />
+          </div>
+          <hr className="hairline" />
+          <p style={{ fontSize: "0.8rem", color: "var(--ink-soft)" }}>The rest is optional.</p>
+          <div className="field">
+            <label htmlFor="severity">Severity / urgency</label>
+            <input id="severity" value={severity} onChange={(e) => setSeverity(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="medicalHistory">Relevant medical history</label>
+            <textarea id="medicalHistory" rows={2} value={medicalHistory} onChange={(e) => setMedicalHistory(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="medications">Current medications</label>
+            <textarea id="medications" rows={2} value={medications} onChange={(e) => setMedications(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="allergies">Allergies</label>
+            <input id="allergies" value={allergies} onChange={(e) => setAllergies(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="additionalNotes">Additional notes</label>
+            <textarea id="additionalNotes" rows={2} value={additionalNotes} onChange={(e) => setAdditionalNotes(e.target.value)} />
+          </div>
+
+          {isProvider && (
+            <div className="field" style={{ display: "flex", alignItems: "center", gap: "0.5em" }}>
+              <input
+                id="markComplete"
+                type="checkbox"
+                checked={markComplete}
+                onChange={(e) => setMarkComplete(e.target.checked)}
+                style={{ width: "auto" }}
+              />
+              <label htmlFor="markComplete" style={{ marginBottom: 0 }}>
+                Mark triage as complete
+              </label>
+            </div>
+          )}
+
+          <button className="btn" disabled={submitting || !canSubmit} onClick={handleSubmit}>
+            {submitting ? "Saving…" : "Save triage"}
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <p>Loading triage…</p>
+      ) : !triage ? (
+        <div className="empty-state">No triage started yet on this case.</div>
+      ) : (
+        !showForm && (
+          <div className="list-row">
+            <div className="list-row-title">
+              {triage.patient_name}, age {triage.age}
+              {" · "}
+              <span className={`status-pill ${triage.is_complete === "true" ? "confirmed" : "requested"}`}>
+                {triage.is_complete === "true" ? "complete" : "incomplete"}
+              </span>
+            </div>
+            <div className="list-row-meta">
+              Symptoms: {triage.symptoms} · Duration: {triage.duration}
+              {triage.severity && <> · Severity: {triage.severity}</>}
+            </div>
+            {(triage.medical_history || triage.medications || triage.allergies || triage.additional_notes) && (
+              <div className="list-row-meta">
+                {triage.medical_history && <>History: {triage.medical_history} </>}
+                {triage.medications && <>· Medications: {triage.medications} </>}
+                {triage.allergies && <>· Allergies: {triage.allergies} </>}
+                {triage.additional_notes && <>· Notes: {triage.additional_notes}</>}
+              </div>
+            )}
+          </div>
+        )
+      )}
+    </div>
+  );
 }
 
 function AppointmentsSection({ caseId }: { caseId: string }) {
@@ -338,6 +533,8 @@ export default function CaseDetail() {
 
   return (
     <div>
+      <TriageSection caseId={caseId} />
+      <hr className="hairline" />
       <AppointmentsSection caseId={caseId} />
       <hr className="hairline" />
       <PrescriptionsSection caseId={caseId} />

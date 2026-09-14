@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.database.models import Role, CaseStatus, ConsultationType, AppointmentStatus
 
@@ -19,6 +19,38 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: str
     role: Role
+
+
+class PatientSignupRequest(BaseModel):
+    full_name: str
+    password: str = Field(min_length=8)
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    identifier: str  # email or phone
+    password: str
+
+
+class ProviderLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ProviderCreateByAdmin(BaseModel):
+    username: str
+    full_name: str
+    password: str = Field(min_length=8)
+    specialty: str
+    bio: Optional[str] = None
+    languages: Optional[str] = None
+
+
+class ProviderAccountOut(BaseModel):
+    username: str
+    full_name: str
+    provider_id: str
 
 
 # --- Providers ---
@@ -114,3 +146,36 @@ class PrescriptionOut(BaseModel):
     dosage: str
     instructions: Optional[str]
     created_at: datetime
+
+
+# --- Triage ---
+class TriageUpsert(BaseModel):
+    patient_name: str
+    age: int = Field(gt=0, lt=130)
+    symptoms: str
+    duration: str
+    severity: Optional[str] = None
+    medical_history: Optional[str] = None
+    medications: Optional[str] = None
+    allergies: Optional[str] = None
+    additional_notes: Optional[str] = None
+    mark_complete: bool = False
+
+
+class TriageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    triage_id: str
+    case_id: str
+    patient_name: str
+    age: int
+    symptoms: str
+    duration: str
+    severity: Optional[str]
+    medical_history: Optional[str]
+    medications: Optional[str]
+    allergies: Optional[str]
+    additional_notes: Optional[str]
+    is_complete: str
+    completed_by_user_id: str
+    created_at: datetime
+    updated_at: datetime

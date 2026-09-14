@@ -44,6 +44,38 @@ export interface DevLoginPayload {
   phone_number?: string;
 }
 
+export interface PatientSignupPayload {
+  full_name: string;
+  password: string;
+  email?: string;
+  phone_number?: string;
+}
+
+export interface LoginPayload {
+  identifier: string; // email or phone
+  password: string;
+}
+
+export interface ProviderLoginPayload {
+  username: string;
+  password: string;
+}
+
+export interface ProviderCreatePayload {
+  username: string;
+  full_name: string;
+  password: string;
+  specialty: string;
+  bio?: string;
+  languages?: string;
+}
+
+export interface ProviderAccount {
+  username: string;
+  full_name: string;
+  provider_id: string;
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -108,12 +140,42 @@ export interface Prescription {
   created_at: string;
 }
 
+export interface Triage {
+  triage_id: string;
+  case_id: string;
+  patient_name: string;
+  age: number;
+  symptoms: string;
+  duration: string;
+  severity: string | null;
+  medical_history: string | null;
+  medications: string | null;
+  allergies: string | null;
+  additional_notes: string | null;
+  is_complete: "true" | "false";
+  completed_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export const api = {
   devLogin: (payload: DevLoginPayload) =>
     request<TokenResponse>("/auth/dev-login", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  patientSignup: (payload: PatientSignupPayload) =>
+    request<TokenResponse>("/auth/patient/signup", { method: "POST", body: JSON.stringify(payload) }),
+
+  patientLogin: (payload: LoginPayload) =>
+    request<TokenResponse>("/auth/patient/login", { method: "POST", body: JSON.stringify(payload) }),
+
+  providerLogin: (payload: ProviderLoginPayload) =>
+    request<TokenResponse>("/auth/provider/login", { method: "POST", body: JSON.stringify(payload) }),
+
+  createProviderAccount: (token: string, payload: ProviderCreatePayload) =>
+    request<ProviderAccount>("/auth/admin/create-provider", { method: "POST", body: JSON.stringify(payload) }, token),
 
   me: (token: string) => request("/me", {}, token),
 
@@ -182,4 +244,24 @@ export const api = {
 
   listCasePrescriptions: (token: string, caseId: string) =>
     request<Prescription[]>(`/cases/${caseId}/prescriptions`, {}, token),
+
+  // --- Triage ---
+  upsertTriage: (
+    token: string,
+    caseId: string,
+    payload: {
+      patient_name: string;
+      age: number;
+      symptoms: string;
+      duration: string;
+      severity?: string;
+      medical_history?: string;
+      medications?: string;
+      allergies?: string;
+      additional_notes?: string;
+      mark_complete?: boolean;
+    }
+  ) => request<Triage>(`/cases/${caseId}/triage`, { method: "PUT", body: JSON.stringify(payload) }, token),
+
+  getTriage: (token: string, caseId: string) => request<Triage | null>(`/cases/${caseId}/triage`, {}, token),
 };

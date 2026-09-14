@@ -1,9 +1,10 @@
-# Kalvia Health — Phase 2
+# Kalvia Health — Phase 3
 
-Auth (patient/provider/call-center-staff/admin roles), provider
-directory, case management with a timeline, and now **appointment
-booking with Jitsi video consultations** and **prescriptions**. This
-is the foundation everything else (nutrition, follow-up engine, SMS)
+Real patient signup/login (email or phone + password), admin-issued
+provider accounts (dedicated username + password, no self-signup),
+and a **triage/intake form** on each case — plus everything from
+Phase 2 (appointment booking, Jitsi video, prescriptions). This is
+the foundation everything else (nutrition, follow-up engine, SMS)
 attaches to in later phases.
 
 ## Option A — run locally, no Docker (fastest to try)
@@ -37,30 +38,48 @@ Same API, backed by Postgres instead of SQLite.
 ```bash
 API=http://127.0.0.1:8000/api/v1
 
-# Register/login a provider
+# Bootstrap the first admin account (dev-mode only — the ONLY role dev-login still accepts)
 curl -s -X POST $API/auth/dev-login -H "Content-Type: application/json" \
-  -d '{"username":"dr_amanuel","full_name":"Dr. Amanuel Tesfaye","role":"provider","external_idp_subject":"prov001"}'
-# -> copy access_token as PROVIDER
+  -d '{"username":"admin1","full_name":"Kalvia Admin","role":"admin","external_idp_subject":"admin001"}'
+# -> copy access_token as ADMIN
 
-# Provider fills in their specialty
-curl -s -X POST $API/providers/me -H "Authorization: Bearer $PROVIDER" \
+# Admin issues a provider account (providers don't self-register)
+curl -s -X POST $API/auth/admin/create-provider -H "Authorization: Bearer $ADMIN" \
   -H "Content-Type: application/json" \
-  -d '{"specialty":"internal_medicine","bio":"General internal medicine, 8 years","languages":"Amharic,English"}'
-# -> copy provider_id
+  -d '{"username":"dr_amanuel","full_name":"Dr. Amanuel Tesfaye","password":"a-real-password","specialty":"internal_medicine","bio":"General internal medicine, 8 years","languages":"Amharic,English"}'
 
-# Register/login a patient
-curl -s -X POST $API/auth/dev-login -H "Content-Type: application/json" \
-  -d '{"username":"selam_k","full_name":"Selam Kebede","role":"patient","external_idp_subject":"pat001"}'
+# Provider logs in with those credentials
+curl -s -X POST $API/auth/provider/login -H "Content-Type: application/json" \
+  -d '{"username":"dr_amanuel","password":"a-real-password"}'
+# -> copy access_token as PROVIDER; provider_id is already set from account creation
+
+# Patient signs up (email or phone + password)
+curl -s -X POST $API/auth/patient/signup -H "Content-Type: application/json" \
+  -d '{"full_name":"Selam Kebede","email":"selam@example.com","password":"a-real-password"}'
 # -> copy access_token as PATIENT
 
-# Patient browses providers
-curl -s $API/providers -H "Authorization: Bearer $PATIENT"
+# ...or logs back in later
+curl -s -X POST $API/auth/patient/login -H "Content-Type: application/json" \
+  -d '{"identifier":"selam@example.com","password":"a-real-password"}'
 
-# Patient opens a case with that provider
+# Patient browses providers, opens a case
+curl -s $API/providers -H "Authorization: Bearer $PATIENT"
 curl -s -X POST $API/cases -H "Authorization: Bearer $PATIENT" \
   -H "Content-Type: application/json" \
   -d '{"provider_id":"<paste provider_id>","reason":"Ongoing fatigue and weight loss, want a check-up"}'
 # -> copy case_id
+
+# Patient starts triage — name/age/symptoms/duration required, rest optional
+curl -s -X PUT $API/cases/<case_id>/triage -H "Authorization: Bearer $PATIENT" \
+  -H "Content-Type: application/json" \
+  -d '{"patient_name":"Selam Kebede","age":29,"symptoms":"Fatigue, unintended weight loss","duration":"3 weeks"}'
+
+# Provider fills in what was left blank and marks it complete
+curl -s -X PUT $API/cases/<case_id>/triage -H "Authorization: Bearer $PROVIDER" \
+  -H "Content-Type: application/json" \
+  -d '{"patient_name":"Selam Kebede","age":29,"symptoms":"Fatigue, unintended weight loss","duration":"3 weeks","severity":"moderate","medical_history":"No chronic conditions","mark_complete":true}'
+
+curl -s $API/cases/<case_id>/triage -H "Authorization: Bearer $PATIENT"
 
 # Either side can add a timeline note
 curl -s -X POST $API/cases/<case_id>/notes -H "Authorization: Bearer $PROVIDER" \
@@ -69,7 +88,7 @@ curl -s -X POST $API/cases/<case_id>/notes -H "Authorization: Bearer $PROVIDER" 
 
 curl -s $API/cases/<case_id>/notes -H "Authorization: Bearer $PATIENT"
 
-# Patient requests a video appointment on the case
+# Patient requests a video appointment on the case — independent of triage status
 curl -s -X POST $API/appointments -H "Authorization: Bearer $PATIENT" \
   -H "Content-Type: application/json" \
   -d '{"case_id":"<case_id>","consultation_type":"video","scheduled_at":"2026-09-20T10:00:00","duration_minutes":30}'
@@ -96,6 +115,31 @@ curl -s $API/cases/<case_id>/prescriptions -H "Authorization: Bearer $PATIENT"
 curl -s $API/appointments -H "Authorization: Bearer $PATIENT"
 ```
 
+### Auth model
+
+- **Patients** sign up themselves with `full_name` + `password` + at
+  least one of `email` / `phone_number`, via `/auth/patient/signup`,
+  and log back in via `/auth/patient/login` with either identifier.
+- **Providers** never self-register. An **admin** issues their
+  `username` + `password` via `/auth/admin/create-provider`, and
+  hands the credentials to them directly. Providers log in via
+  `/auth/provider/login`.
+- **Admin** accounts still go through `/auth/dev-login`, but that
+  endpoint now rejects any role other than `admin` — it exists purely
+  to bootstrap the first admin, not as a general-purpose login.
+  Passwords are hashed with bcrypt (`passlib`), never stored plain.
+
+### Triage / intake
+
+`patient_name`, `age`, `symptoms`, and `duration` are required to
+submit a triage record at all; `severity`, `medical_history`,
+`medications`, `allergies`, and `additional_notes` are optional.
+`PUT /cases/{case_id}/triage` is an upsert — the patient's first
+submission creates it, and either side calling it again updates the
+same record. Only a provider (or admin/call-center-staff) can set
+`mark_complete: true`. Booking an appointment does **not** require
+triage to be started or complete — they're independent.
+
 ### Appointment lifecycle
 
 `requested` → `confirmed` → `completed`, or `cancelled` from either
@@ -116,7 +160,7 @@ Authorization for both appointments and prescriptions goes through
 the same participant check cases already use, now shared across
 routers instead of duplicated.
 
-## Frontend (Phase 1)
+## Frontend
 
 ```bash
 cd frontend
@@ -125,18 +169,33 @@ cp .env.example .env   # points at your local backend by default
 npm run dev
 ```
 
-Open http://localhost:5173 — sign in as a **provider** first (set up a
-specialty profile), then open a second browser/incognito window and
-sign in as a **patient** to browse providers and open a case.
+Open http://localhost:5173. The login screen has **Patient** and
+**Provider** tabs, plus a small **Admin access** link at the bottom
+(dev-mode bootstrap). Recommended order to try it:
 
-Once a case is open, its detail page now has **Appointments** and
-**Prescriptions** sections above the timeline: either side can
-request an appointment, the provider confirms/completes it, and a
-confirmed video appointment shows a **Join video call** button
-that opens the Jitsi room in a new tab. Providers get an **Issue**
-button on Prescriptions. There's also a new **Appointments** nav
-item — a cross-case agenda of everything scheduled, most-recent
-last, linking back to the case it belongs to.
+1. Click **Admin access**, pick any username/full name, and sign in
+   — you'll land on **Create provider**.
+2. Fill in a username, password, and specialty for a provider, submit
+   it, and note the credentials shown.
+3. Sign out, switch to the **Provider** tab, and log in with those
+   credentials — set up the rest of the profile if prompted.
+4. Open a second incognito window, go to the **Patient** tab, and
+   **Create an account** with an email or phone + password.
+5. As the patient, browse providers and open a case. On the case
+   page, **Triage** sits above Appointments — fill in the four
+   required fields (name, age, symptoms, duration) and save.
+6. Switch to the provider window, open the same case, fill in any of
+   the optional triage fields you want, check **Mark triage as
+   complete**, and save.
+7. Try scheduling a video appointment and confirming it — the
+   **Join video call** button opens the Jitsi room. Providers get an
+   **Issue** button on Prescriptions. The **Appointments** nav item
+   is a cross-case agenda of everything scheduled.
+
+**Heads up if you're upgrading from Phase 2:** accounts created
+through the old dev-login (any pre-existing patient/provider test
+users) have no password set and won't work with the new login forms.
+Re-create them through the new signup/admin-creation flow.
 
 ## Deploying publicly (Supabase + Render + Netlify)
 
@@ -164,14 +223,18 @@ in `netlify.toml`). Set the environment variable:
 VITE_API_URL=https://your-app.onrender.com/api/v1
 ```
 
-## What's deliberately NOT in Phase 2
+## What's deliberately NOT in Phase 3
 
 - Nutrition plans + adherence tracking (Phase 4)
 - Follow-up checkpoints/alerts (Phase 4)
 - SMS/voice communication (Phase 5)
-- Call center queueing — Asterisk/FreeSWITCH (Phase 3)
+- Call center queueing — Asterisk/FreeSWITCH (Phase 3-cont'd)
 - Appointment reminders (SMS/email) — depends on Phase 5's messaging piece
 - Self-hosted Jitsi — currently the free public `meet.jit.si`, swappable via `JITSI_BASE_URL`
+- Real OIDC login — `AUTH_MODE` still defaults to a placeholder; the
+  admin bootstrap path exists only because `AUTH_MODE=dev` is set
+- Password reset / "forgot password" flow
+- Email/SMS verification at signup (accounts are usable immediately)
 
 Each of those is a new router + a few tables that hang off `case_id`
 — the auth/role pattern here doesn't change.

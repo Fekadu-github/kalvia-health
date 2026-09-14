@@ -34,6 +34,7 @@ body {
   font-size: 15px;
   line-height: 1.5;
 }
+
 h1, h2, h3 {
   font-family: var(--font-display);
   font-weight: 500;
@@ -185,6 +186,44 @@ label {
 .auth-card {
   width: 100%;
   max-width: 380px;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 0.4em;
+  margin: 0.8em 0 0.2em;
+}
+.mode-tab {
+  flex: 1;
+  padding: 0.5em 0.8em;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-soft);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+}
+.mode-tab.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.auth-switch {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin-top: 1em;
+}
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: inherit;
 }
 
 .list-row {

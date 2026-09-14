@@ -33,7 +33,9 @@ class User(Base):
     user_id = Column(String, primary_key=True, default=lambda: gen_id("user"))
     username = Column(String, unique=True, nullable=False)
     full_name = Column(String, nullable=False)
-    phone_number = Column(String, unique=True, nullable=True)  # for SMS/voice
+    email = Column(String, unique=True, nullable=True)
+    phone_number = Column(String, unique=True, nullable=True)  # for SMS/voice, and patient login
+    password_hash = Column(String, nullable=True)  # set for patient signup + admin-issued provider accounts
     role = Column(Enum(Role), nullable=False)
     external_idp_subject = Column(String, unique=True, nullable=True)  # dev-login / OIDC subject
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -92,6 +94,7 @@ class Case(Base):
     notes = relationship("CaseNote", back_populates="case")
     appointments = relationship("Appointment", back_populates="case")
     prescriptions = relationship("Prescription", back_populates="case")
+    triage = relationship("Triage", back_populates="case", uselist=False)
 
 
 class CaseNote(Base):
@@ -176,3 +179,34 @@ class Prescription(Base):
 
     case = relationship("Case", back_populates="prescriptions")
     appointment = relationship("Appointment")
+
+
+class Triage(Base):
+    """
+    First-hand intake, started by the patient when a case is opened.
+    patient_name / age / symptoms / duration are required at submit
+    time; everything else is optional and can be left for the
+    provider to fill in and mark complete.
+    """
+    __tablename__ = "triage_records"
+
+    triage_id = Column(String, primary_key=True, default=lambda: gen_id("triage"))
+    case_id = Column(String, ForeignKey("cases.case_id"), unique=True, nullable=False)
+
+    patient_name = Column(String, nullable=False)
+    age = Column(Integer, nullable=False)
+    symptoms = Column(Text, nullable=False)
+    duration = Column(String, nullable=False)
+
+    severity = Column(String, nullable=True)
+    medical_history = Column(Text, nullable=True)
+    medications = Column(Text, nullable=True)
+    allergies = Column(Text, nullable=True)
+    additional_notes = Column(Text, nullable=True)
+
+    is_complete = Column(String, default="false")  # "true"/"false", same convention as accepting_new_cases
+    completed_by_user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    case = relationship("Case", back_populates="triage")

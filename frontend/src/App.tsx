@@ -7,6 +7,7 @@ import ProviderSetup from "./pages/ProviderSetup";
 import Cases from "./pages/Cases";
 import CaseDetail from "./pages/CaseDetail";
 import Appointments from "./pages/Appointments";
+import AdminCreateProvider from "./pages/AdminCreateProvider";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { session } = useAuth();
@@ -30,6 +31,7 @@ function AppRoutes() {
         <Route path="/cases" element={<Cases />} />
         <Route path="/cases/:caseId" element={<CaseDetail />} />
         <Route path="/appointments" element={<Appointments />} />
+        <Route path="/admin/providers" element={<AdminCreateProvider />} />
         <Route path="/" element={<Navigate to="/providers" replace />} />
       </Route>
     </Routes>
