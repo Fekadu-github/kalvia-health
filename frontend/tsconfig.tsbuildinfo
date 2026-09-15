@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/vite-env.d.ts","./src/context/authcontext.tsx","./src/pages/admincreateprovider.tsx","./src/pages/appshell.tsx","./src/pages/appointments.tsx","./src/pages/casedetail.tsx","./src/pages/cases.tsx","./src/pages/login.tsx","./src/pages/providerdirectory.tsx","./src/pages/providersetup.tsx"],"version":"5.9.3"}
