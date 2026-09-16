@@ -38,6 +38,34 @@ class ProviderLoginRequest(BaseModel):
     password: str
 
 
+class AdminBootstrapRequest(BaseModel):
+    """One-time use: creates the very first admin account. Rejected
+    once any admin already exists — after that, use /auth/admin/login."""
+    bootstrap_secret: str
+    username: str
+    full_name: str
+    password: str = Field(min_length=8)
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class PasswordResetRequest(BaseModel):
+    identifier: str  # username, email, or phone
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    identifier: str
+    code: str
+    new_password: str = Field(min_length=8)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
 class ProviderCreateByAdmin(BaseModel):
     username: str
     full_name: str

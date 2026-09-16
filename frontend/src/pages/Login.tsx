@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useAuth } from "../context/AuthContext";
 
-type Mode = "patient-login" | "patient-signup" | "provider-login" | "admin-bootstrap";
+type Mode = "patient-login" | "patient-signup" | "provider-login";
 
 export default function Login() {
   const { login } = useAuth();
@@ -23,10 +23,6 @@ export default function Login() {
   // Provider fields
   const [providerUsername, setProviderUsername] = useState("");
   const [providerPassword, setProviderPassword] = useState("");
-
-  // Admin bootstrap fields (dev-mode only)
-  const [adminUsername, setAdminUsername] = useState("");
-  const [adminFullName, setAdminFullName] = useState("");
 
   function afterLogin(res: { access_token: string; user_id: string; role: string }, name: string) {
     login({ token: res.access_token, userId: res.user_id, role: res.role, fullName: name });
@@ -84,25 +80,6 @@ export default function Login() {
     }
   }
 
-  async function handleAdminBootstrap(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await api.devLogin({
-        username: adminUsername,
-        full_name: adminFullName,
-        role: "admin",
-        external_idp_subject: adminUsername,
-      });
-      login({ token: res.access_token, userId: res.user_id, role: res.role, fullName: adminFullName });
-      navigate("/admin/providers");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -241,31 +218,15 @@ export default function Login() {
           </form>
         )}
 
-        {mode === "admin-bootstrap" && (
-          <form onSubmit={handleAdminBootstrap}>
-            <div className="field">
-              <label htmlFor="adminUsername">Admin username</label>
-              <input id="adminUsername" value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="adminFullName">Full name</label>
-              <input id="adminFullName" value={adminFullName} onChange={(e) => setAdminFullName(e.target.value)} required />
-            </div>
-            <button type="submit" className="btn" disabled={loading} style={{ width: "100%" }}>
-              {loading ? "Signing in…" : "Enter admin console"}
-            </button>
-            {error && <p className="error-text">{error}</p>}
-            <p className="auth-switch">Dev-mode bootstrap access — used once to create provider accounts.</p>
-          </form>
-        )}
-
-        {mode !== "admin-bootstrap" && (
+        {mode === "provider-login" && (
           <p className="auth-switch">
-            <button type="button" className="link-btn" onClick={() => switchMode("admin-bootstrap")}>
-              Admin access
-            </button>
+            <Link to="/forgot-password">Forgot password?</Link>
           </p>
         )}
+
+        <p className="auth-switch">
+          <Link to="/admin/login">Admin sign in</Link>
+        </p>
       </div>
     </div>
   );

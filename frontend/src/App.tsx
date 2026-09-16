@@ -1,6 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
+import AdminLogin from "./pages/AdminLogin";
+import AdminBootstrap from "./pages/AdminBootstrap";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import AppShell from "./pages/AppShell";
 import ProviderDirectory from "./pages/ProviderDirectory";
 import ProviderSetup from "./pages/ProviderSetup";
@@ -25,6 +29,10 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route path="/admin/bootstrap" element={<AdminBootstrap />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route
         element={
           <RequireAuth>

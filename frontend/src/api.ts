@@ -88,6 +88,24 @@ export interface ProviderLoginPayload {
   password: string;
 }
 
+export interface AdminBootstrapPayload {
+  bootstrap_secret: string;
+  username: string;
+  full_name: string;
+  password: string;
+}
+
+export interface AdminLoginPayload {
+  username: string;
+  password: string;
+}
+
+export interface PasswordResetConfirmPayload {
+  identifier: string;
+  code: string;
+  new_password: string;
+}
+
 export interface ProviderCreatePayload {
   username: string;
   full_name: string;
@@ -268,6 +286,21 @@ export const api = {
 
   providerLogin: (payload: ProviderLoginPayload) =>
     request<TokenResponse>("/auth/provider/login", { method: "POST", body: JSON.stringify(payload) }),
+
+  adminBootstrap: (payload: AdminBootstrapPayload) =>
+    request<TokenResponse>("/auth/admin/bootstrap", { method: "POST", body: JSON.stringify(payload) }),
+
+  adminLogin: (payload: AdminLoginPayload) =>
+    request<TokenResponse>("/auth/admin/login", { method: "POST", body: JSON.stringify(payload) }),
+
+  requestPasswordReset: (identifier: string) =>
+    request<{ message: string }>("/auth/password/request-reset", {
+      method: "POST",
+      body: JSON.stringify({ identifier }),
+    }),
+
+  confirmPasswordReset: (payload: PasswordResetConfirmPayload) =>
+    request<TokenResponse>("/auth/password/confirm-reset", { method: "POST", body: JSON.stringify(payload) }),
 
   createProviderAccount: (token: string, payload: ProviderCreatePayload) =>
     request<ProviderAccount>("/auth/admin/create-provider", { method: "POST", body: JSON.stringify(payload) }, token),
