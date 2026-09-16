@@ -41,7 +41,18 @@ class User(Base):
     external_idp_subject = Column(String, unique=True, nullable=True)  # dev-login / OIDC subject
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    provider_profile = relationship("ProviderProfile", back_populates="user", uselist=False)
+    # Password reset: a short-lived 6-digit code, cleared on use or
+    # replaced by a newer request. Not a token — kept simple since
+    # the whole flow is confirm-with-code, not a magic link.
+    reset_code = Column(String, nullable=True)
+    reset_code_expires_at = Column(DateTime, nullable=True)
+
+    provider_profile = relationship(
+        "ProviderProfile",
+        back_populates="user",
+        uselist=False,
+        foreign_keys="ProviderProfile.user_id",
+    )
     patient_profile = relationship("PatientProfile", back_populates="user", uselist=False)
 
 

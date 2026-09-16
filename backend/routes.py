@@ -1,276 +1,270 @@
-import io
-import uuid
-from datetime import datetime
-from typing import Optional, List, Union
+import os
+import random
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
-from PIL import Image, UnidentifiedImageError
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from backend.database.db import get_db
-from backend.database.models import (
-    ProviderProfile,
-    ProviderApprovalStatus,
-    User,
-    Role,
+from backend.database.models import User, Role, PatientProfile, ProviderProfile, ProviderApprovalStatus
+from backend.auth.security import (
+    AUTH_MODE,
+    create_access_token,
+    get_current_user,
+    require_role,
+    hash_password,
+    verify_password,
 )
-from backend.auth.security import get_current_user, require_role
+from backend.notifications.email import send_email
+from backend.notifications.sms import send_sms
 from backend import schemas
+
+ADMIN_BOOTSTRAP_SECRET = os.getenv("ADMIN_BOOTSTRAP_SECRET")
+RESET_CODE_TTL_MINUTES = 10
 
 router = APIRouter()
 
-# 3:4 portrait, matching a standard passport/ID-style photo crop.
-PHOTO_WIDTH = 450
-PHOTO_HEIGHT = 600
-ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+@router.post("/auth/dev-login", response_model=schemas.TokenResponse)
+def dev_login(payload: schemas.DevLoginRequest, db: Session = Depends(get_db)):
+    """
+    Admin bootstrap only. Real patient/provider accounts now go
+    through /auth/patient/signup and /auth/admin/create-provider —
+    this endpoint exists purely to get the first admin account
+    without a chicken-and-egg problem.
+    """
+    if AUTH_MODE != "dev":
+        raise HTTPException(403, "Dev login is disabled. Set AUTH_MODE=dev to enable it locally.")
+    if payload.role != Role.admin:
+        raise HTTPException(
+            403,
+            "Dev login is admin-only bootstrap access. Patients sign up at "
+            "/auth/patient/signup; providers are created by an admin via "
+            "/auth/admin/create-provider.",
+        )
+
+    user = db.query(User).filter(User.external_idp_subject == payload.external_idp_subject).first()
+    if user is None:
+        user = User(
+            username=payload.username,
+            full_name=payload.full_name,
+            role=payload.role,
+            external_idp_subject=payload.external_idp_subject,
+            phone_number=payload.phone_number,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    token = create_access_token(user.user_id, user.role.value)
+    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
 
 
-def _reset_for_review(profile: ProviderProfile) -> None:
-    """Any create or edit by the provider drops the profile back to
-    'pending' so an admin has to sign off before patients see it."""
-    profile.approval_status = ProviderApprovalStatus.pending
-    profile.rejection_reason = None
-    profile.approved_at = None
-    profile.approved_by_user_id = None
+@router.post("/auth/patient/signup", response_model=schemas.TokenResponse)
+def patient_signup(payload: schemas.PatientSignupRequest, db: Session = Depends(get_db)):
+    if not payload.email and not payload.phone_number:
+        raise HTTPException(400, "Provide an email or phone number to sign up")
 
-
-def _crop_to_3x4(image: Image.Image) -> Image.Image:
-    """Center-crop to a 3:4 (width:height) portrait ratio, then
-    resize to a fixed size so every stored photo is uniform."""
-    image = image.convert("RGB")
-    width, height = image.size
-    target_ratio = PHOTO_WIDTH / PHOTO_HEIGHT
-
-    current_ratio = width / height
-    if current_ratio > target_ratio:
-        # too wide — crop the sides
-        new_width = int(height * target_ratio)
-        left = (width - new_width) // 2
-        image = image.crop((left, 0, left + new_width, height))
-    elif current_ratio < target_ratio:
-        # too tall — crop top/bottom
-        new_height = int(width / target_ratio)
-        top = (height - new_height) // 2
-        image = image.crop((0, top, width, top + new_height))
-
-    return image.resize((PHOTO_WIDTH, PHOTO_HEIGHT), Image.LANCZOS)
-
-
-@router.post("/providers/me", response_model=schemas.ProviderOut)
-def create_my_provider_profile(
-    payload: schemas.ProviderCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_role(Role.provider)),
-):
-    existing = db.query(ProviderProfile).filter(ProviderProfile.user_id == user.user_id).first()
+    existing = None
+    if payload.email:
+        existing = db.query(User).filter(User.email == payload.email).first()
+    if not existing and payload.phone_number:
+        existing = db.query(User).filter(User.phone_number == payload.phone_number).first()
     if existing:
-        raise HTTPException(400, "Provider profile already exists for this user — use PATCH /providers/me to edit it")
+        raise HTTPException(409, "An account with this email or phone number already exists")
 
-    profile = ProviderProfile(user_id=user.user_id, **payload.model_dump())
-    profile.approval_status = ProviderApprovalStatus.pending
-    db.add(profile)
+    user = User(
+        username=payload.email or payload.phone_number,
+        full_name=payload.full_name,
+        role=Role.patient,
+        email=payload.email,
+        phone_number=payload.phone_number,
+        password_hash=hash_password(payload.password),
+    )
+    db.add(user)
     db.commit()
-    db.refresh(profile)
-    return profile
+    db.refresh(user)
 
-
-@router.get("/providers/me", response_model=schemas.ProviderOut)
-def get_my_provider_profile(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_role(Role.provider)),
-):
-    profile = db.query(ProviderProfile).filter(ProviderProfile.user_id == user.user_id).first()
-    if not profile:
-        raise HTTPException(404, "No provider profile yet — create one first")
-    return profile
-
-
-@router.patch("/providers/me", response_model=schemas.ProviderOut)
-def update_my_provider_profile(
-    payload: schemas.ProviderUpdate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_role(Role.provider)),
-):
-    """Providers can edit their own profile whenever they need to.
-    Any change resubmits it for admin approval — the directory only
-    ever lists approved profiles, so an edited profile drops out of
-    patient view until an admin reviews it again."""
-    profile = db.query(ProviderProfile).filter(ProviderProfile.user_id == user.user_id).first()
-    if not profile:
-        raise HTTPException(404, "No provider profile yet — create one first")
-
-    updates = payload.model_dump(exclude_unset=True)
-    if "accepting_new_cases" in updates:
-        updates["accepting_new_cases"] = "true" if updates.pop("accepting_new_cases") else "false"
-
-    for field, value in updates.items():
-        setattr(profile, field, value)
-
-    if updates:
-        _reset_for_review(profile)
-
+    db.add(PatientProfile(user_id=user.user_id))
     db.commit()
-    db.refresh(profile)
-    return profile
+
+    token = create_access_token(user.user_id, user.role.value)
+    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
 
 
-@router.put("/providers/me/photo", response_model=schemas.ProviderOut)
-def upload_my_provider_photo(
-    file: UploadFile = File(...),
+@router.post("/auth/patient/login", response_model=schemas.TokenResponse)
+def patient_login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
+    user = (
+        db.query(User)
+        .filter(User.role == Role.patient)
+        .filter(or_(User.email == payload.identifier, User.phone_number == payload.identifier))
+        .first()
+    )
+    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Invalid email/phone or password")
+
+    token = create_access_token(user.user_id, user.role.value)
+    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+
+
+@router.post("/auth/provider/login", response_model=schemas.TokenResponse)
+def provider_login(payload: schemas.ProviderLoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == payload.username, User.role == Role.provider).first()
+    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Invalid username or password")
+
+    token = create_access_token(user.user_id, user.role.value)
+    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+
+
+@router.post("/auth/admin/create-provider", response_model=schemas.ProviderAccountOut)
+def create_provider_account(
+    payload: schemas.ProviderCreateByAdmin,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role(Role.provider)),
+    admin: User = Depends(require_role(Role.admin)),
 ):
-    """Upload or replace the provider's profile photo. Auto-cropped to
-    a 3:4 portrait server-side, so any image works as input. Unlike
-    the rest of the profile, a new photo takes effect immediately —
-    no admin re-approval needed — so it can be changed anytime."""
-    profile = db.query(ProviderProfile).filter(ProviderProfile.user_id == user.user_id).first()
-    if not profile:
-        raise HTTPException(404, "No provider profile yet — create one first")
+    """Providers don't self-register — an admin issues the username/
+    password and hands it to them out of band."""
+    if db.query(User).filter(User.username == payload.username).first():
+        raise HTTPException(409, "That username is already taken")
 
-    if file.content_type not in ALLOWED_PHOTO_TYPES:
-        raise HTTPException(400, "Photo must be a JPEG, PNG, or WEBP image")
-
-    raw = file.file.read()
-    if len(raw) > 8 * 1024 * 1024:
-        raise HTTPException(400, "Photo must be under 8MB")
-
-    try:
-        image = Image.open(io.BytesIO(raw))
-        image.load()
-    except UnidentifiedImageError:
-        raise HTTPException(400, "Could not read that file as an image")
-
-    cropped = _crop_to_3x4(image)
-
-    buffer = io.BytesIO()
-    cropped.save(buffer, format="JPEG", quality=90)
-
-    # Stored in the DB rather than on disk: Render's free tier has no
-    # persistent disk, so anything written to the filesystem is lost
-    # on the next redeploy. Replacing the row replaces the photo, so
-    # there is no orphaned-file cleanup to do.
-    profile.photo_data = buffer.getvalue()
-    profile.photo_version = uuid.uuid4().hex[:10]
+    user = User(
+        username=payload.username,
+        full_name=payload.full_name,
+        role=Role.provider,
+        password_hash=hash_password(payload.password),
+    )
+    db.add(user)
     db.commit()
-    db.refresh(profile)
-    return profile
+    db.refresh(user)
 
+    # An admin filling this in directly is itself the sign-off, so the
+    # profile goes straight to "approved" — no separate review step.
+    # (Providers who instead fill in their own profile after logging
+    # in go through the pending → admin-approval flow in providers/routes.py.)
+    provider_profile = ProviderProfile(
+        user_id=user.user_id,
+        specialty=payload.specialty,
+        bio=payload.bio,
+        languages=payload.languages,
+        license_number=payload.license_number,
+        years_experience=payload.years_experience,
+        experience_summary=payload.experience_summary,
+        approval_status=ProviderApprovalStatus.approved,
+        approved_at=datetime.utcnow(),
+        approved_by_user_id=admin.user_id,
+    )
+    db.add(provider_profile)
+    db.commit()
 
-@router.get("/providers/{provider_id}/photo")
-def get_provider_photo(
-    provider_id: str,
-    db: Session = Depends(get_db),
-):
-    """Streams the stored JPEG. Deliberately unauthenticated: the
-    frontend renders this straight into an <img src>, which cannot
-    send an Authorization header. The URL is unguessable (random
-    provider_id plus a random ?v= token) and a provider photo is
-    shown to every patient in the directory anyway, so there is no
-    private data behind it."""
-    profile = db.query(ProviderProfile).filter(ProviderProfile.provider_id == provider_id).first()
-    if not profile or not profile.photo_data:
-        raise HTTPException(404, "No photo for this provider")
-
-    return Response(
-        content=profile.photo_data,
-        media_type="image/jpeg",
-        # The URL carries a ?v= token that changes on every upload,
-        # so this can be cached hard without ever going stale.
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    return schemas.ProviderAccountOut(
+        username=user.username, full_name=user.full_name, provider_id=provider_profile.provider_id
     )
 
 
-@router.delete("/providers/me/photo", response_model=schemas.ProviderOut)
-def delete_my_provider_photo(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_role(Role.provider)),
-):
-    profile = db.query(ProviderProfile).filter(ProviderProfile.user_id == user.user_id).first()
-    if not profile:
-        raise HTTPException(404, "No provider profile yet — create one first")
+@router.get("/me")
+def me(user: User = Depends(get_current_user)):
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+        "full_name": user.full_name,
+        "role": user.role,
+        "email": user.email,
+        "phone_number": user.phone_number,
+    }
 
-    profile.photo_data = None
-    profile.photo_version = None
+
+@router.post("/auth/admin/bootstrap", response_model=schemas.TokenResponse)
+def admin_bootstrap(payload: schemas.AdminBootstrapRequest, db: Session = Depends(get_db)):
+    """Creates the first admin account. Requires ADMIN_BOOTSTRAP_SECRET
+    to be set on the server and matched exactly, and only works while
+    no admin account exists yet — once one does, this always 403s, so
+    the secret can't be used to mint extra admins later."""
+    if not ADMIN_BOOTSTRAP_SECRET:
+        raise HTTPException(403, "Admin bootstrap is disabled — ADMIN_BOOTSTRAP_SECRET is not set on the server.")
+    if payload.bootstrap_secret != ADMIN_BOOTSTRAP_SECRET:
+        raise HTTPException(403, "Incorrect bootstrap secret.")
+
+    existing_admin = db.query(User).filter(User.role == Role.admin).first()
+    if existing_admin:
+        raise HTTPException(403, "An admin account already exists. Use /auth/admin/login instead.")
+
+    if db.query(User).filter(User.username == payload.username).first():
+        raise HTTPException(400, "That username is already taken.")
+
+    user = User(
+        username=payload.username,
+        full_name=payload.full_name,
+        role=Role.admin,
+        password_hash=hash_password(payload.password),
+    )
+    db.add(user)
     db.commit()
-    db.refresh(profile)
-    return profile
+    db.refresh(user)
+
+    token = create_access_token(user.user_id, user.role.value)
+    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
 
 
-@router.get("/providers", response_model=List[Union[schemas.ProviderOut, schemas.ProviderPublicOut]])
-def list_providers(
-    specialty: Optional[str] = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    query = db.query(ProviderProfile)
-    if specialty:
-        query = query.filter(ProviderProfile.specialty == specialty)
+@router.post("/auth/admin/login", response_model=schemas.TokenResponse)
+def admin_login(payload: schemas.AdminLoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == payload.username, User.role == Role.admin).first()
+    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Invalid username or password")
 
-    if user.role == Role.patient:
-        # Patients only ever browse approved profiles, and never see
-        # license numbers or the review workflow fields.
-        providers = query.filter(ProviderProfile.approval_status == ProviderApprovalStatus.approved).all()
-        return [schemas.ProviderPublicOut.model_validate(p) for p in providers]
-
-    # admin / provider / call_center_staff see the full picture, including pending/rejected.
-    providers = query.all()
-    return [schemas.ProviderOut.model_validate(p) for p in providers]
+    token = create_access_token(user.user_id, user.role.value)
+    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
 
 
-@router.get("/providers/{provider_id}", response_model=Union[schemas.ProviderOut, schemas.ProviderPublicOut])
-def get_provider(
-    provider_id: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    profile = db.query(ProviderProfile).filter(ProviderProfile.provider_id == provider_id).first()
-    if not profile:
-        raise HTTPException(404, "Provider not found")
-
-    if user.role == Role.patient:
-        if profile.approval_status != ProviderApprovalStatus.approved:
-            # Don't reveal that a pending/rejected provider exists.
-            raise HTTPException(404, "Provider not found")
-        return schemas.ProviderPublicOut.model_validate(profile)
-
-    return schemas.ProviderOut.model_validate(profile)
+def _find_user_by_identifier(db: Session, identifier: str) -> User | None:
+    return (
+        db.query(User)
+        .filter(or_(User.username == identifier, User.email == identifier, User.phone_number == identifier))
+        .first()
+    )
 
 
-@router.post("/providers/{provider_id}/approve", response_model=schemas.ProviderOut)
-def approve_provider(
-    provider_id: str,
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_role(Role.admin)),
-):
-    profile = db.query(ProviderProfile).filter(ProviderProfile.provider_id == provider_id).first()
-    if not profile:
-        raise HTTPException(404, "Provider not found")
+@router.post("/auth/password/request-reset", response_model=schemas.MessageResponse)
+def request_password_reset(payload: schemas.PasswordResetRequest, db: Session = Depends(get_db)):
+    """Always returns the same generic message whether or not the
+    identifier matched an account, so this can't be used to check
+    which usernames/emails/phone numbers exist."""
+    user = _find_user_by_identifier(db, payload.identifier)
+    if user and user.password_hash:  # only accounts with a password can reset one (skips dev/OIDC-only accounts)
+        code = f"{random.randint(0, 999999):06d}"
+        user.reset_code = code
+        user.reset_code_expires_at = datetime.utcnow() + timedelta(minutes=RESET_CODE_TTL_MINUTES)
+        db.commit()
 
-    profile.approval_status = ProviderApprovalStatus.approved
-    profile.rejection_reason = None
-    profile.approved_at = datetime.utcnow()
-    profile.approved_by_user_id = admin.user_id
+        body = f"Your Kalvia Health password reset code is {code}. It expires in {RESET_CODE_TTL_MINUTES} minutes."
+        if user.email:
+            send_email(user.email, "Your Kalvia Health reset code", body)
+        elif user.phone_number:
+            send_sms(user.phone_number, body)
+
+    return schemas.MessageResponse(
+        message="If an account matches, a 6-digit code has been sent to it."
+    )
+
+
+@router.post("/auth/password/confirm-reset", response_model=schemas.TokenResponse)
+def confirm_password_reset(payload: schemas.PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    user = _find_user_by_identifier(db, payload.identifier)
+    if (
+        not user
+        or not user.reset_code
+        or user.reset_code != payload.code
+        or not user.reset_code_expires_at
+        or user.reset_code_expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(400, "That code is invalid or has expired.")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.reset_code = None
+    user.reset_code_expires_at = None
     db.commit()
-    db.refresh(profile)
-    return profile
+    db.refresh(user)
 
-
-@router.post("/providers/{provider_id}/reject", response_model=schemas.ProviderOut)
-def reject_provider(
-    provider_id: str,
-    payload: schemas.ProviderRejectRequest,
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_role(Role.admin)),
-):
-    profile = db.query(ProviderProfile).filter(ProviderProfile.provider_id == provider_id).first()
-    if not profile:
-        raise HTTPException(404, "Provider not found")
-
-    profile.approval_status = ProviderApprovalStatus.rejected
-    profile.rejection_reason = payload.rejection_reason
-    profile.approved_at = None
-    profile.approved_by_user_id = admin.user_id
-    db.commit()
-    db.refresh(profile)
-    return profile
+    token = create_access_token(user.user_id, user.role.value)
+    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)

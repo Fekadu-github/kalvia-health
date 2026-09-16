@@ -1,10 +1,9 @@
 import io
-import os
 import uuid
 from datetime import datetime
 from typing import Optional, List, Union
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
@@ -14,7 +13,6 @@ from backend.database.models import (
     ProviderApprovalStatus,
     User,
     Role,
-    PROVIDER_PHOTO_DIR,
 )
 from backend.auth.security import get_current_user, require_role
 from backend import schemas
@@ -24,9 +22,6 @@ router = APIRouter()
 # 3:4 portrait, matching a standard passport/ID-style photo crop.
 PHOTO_WIDTH = 450
 PHOTO_HEIGHT = 600
-# backend/providers/routes.py -> backend/ -> backend/static/provider_photos
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PHOTO_STORAGE_DIR = os.path.join(_BACKEND_DIR, "static", PROVIDER_PHOTO_DIR)
 ALLOWED_PHOTO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
@@ -59,17 +54,6 @@ def _crop_to_3x4(image: Image.Image) -> Image.Image:
         image = image.crop((0, top, width, top + new_height))
 
     return image.resize((PHOTO_WIDTH, PHOTO_HEIGHT), Image.LANCZOS)
-
-
-def _delete_photo_file(filename: Optional[str]) -> None:
-    if not filename:
-        return
-    path = os.path.join(PHOTO_STORAGE_DIR, filename)
-    if os.path.exists(path):
-        try:
-            os.remove(path)
-        except OSError:
-            pass  # best-effort cleanup; a stray orphaned file isn't worth failing the request over
 
 
 @router.post("/providers/me", response_model=schemas.ProviderOut)
@@ -159,17 +143,40 @@ def upload_my_provider_photo(
 
     cropped = _crop_to_3x4(image)
 
-    os.makedirs(PHOTO_STORAGE_DIR, exist_ok=True)
-    old_filename = profile.photo_filename
-    new_filename = f"{profile.provider_id}_{uuid.uuid4().hex[:10]}.jpg"
-    cropped.save(os.path.join(PHOTO_STORAGE_DIR, new_filename), format="JPEG", quality=90)
+    buffer = io.BytesIO()
+    cropped.save(buffer, format="JPEG", quality=90)
 
-    profile.photo_filename = new_filename
+    # Stored in the DB rather than on disk: Render's free tier has no
+    # persistent disk, so anything written to the filesystem is lost
+    # on the next redeploy. Replacing the row replaces the photo, so
+    # there is no orphaned-file cleanup to do.
+    profile.photo_data = buffer.getvalue()
+    profile.photo_version = uuid.uuid4().hex[:10]
     db.commit()
     db.refresh(profile)
-
-    _delete_photo_file(old_filename)  # after commit succeeds, so a failed save never orphans the live photo
     return profile
+
+
+@router.get("/providers/{provider_id}/photo")
+def get_provider_photo(
+    provider_id: str,
+    db: Session = Depends(get_db),
+):
+    """Streams the stored JPEG. Deliberately unauthenticated: the
+    frontend renders this straight into an <img src>, which cannot
+    send an Authorization header. The URL is unguessable (random
+    provider_id plus a random ?v= token) and a provider photo is
+    shown to every patient in the directory anyway, so there is no
+    private data behind it."""
+    profile = db.query(ProviderProfile).filter(ProviderProfile.provider_id == provider_id).first()
+    if not profile or not profile.photo_data:
+        raise HTTPException(404, "No photo for this provider")
+
+    return Response(
+        content=profile.photo_data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.delete("/providers/me/photo", response_model=schemas.ProviderOut)
@@ -181,11 +188,10 @@ def delete_my_provider_photo(
     if not profile:
         raise HTTPException(404, "No provider profile yet — create one first")
 
-    old_filename = profile.photo_filename
-    profile.photo_filename = None
+    profile.photo_data = None
+    profile.photo_version = None
     db.commit()
     db.refresh(profile)
-    _delete_photo_file(old_filename)
     return profile
 
 
