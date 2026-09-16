@@ -3,14 +3,13 @@ import os
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Text, Integer
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Text, Integer, LargeBinary
 from sqlalchemy.orm import relationship
 
 from backend.database.db import Base
 
 JITSI_BASE_URL = os.getenv("JITSI_BASE_URL", "https://meet.jit.si")
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
-PROVIDER_PHOTO_DIR = "provider_photos"
 
 
 def gen_id(prefix: str) -> str:
@@ -72,12 +71,12 @@ class ProviderProfile(Base):
     years_experience = Column(Integer, nullable=True)
     experience_summary = Column(Text, nullable=True)
 
-    # A 3:4 portrait photo, stored under /static/provider_photos.
-    # Filename carries a fresh random suffix on every upload so
-    # browsers never serve a stale cached image after a change, and
-    # it updates immediately — unlike the fields above, a new photo
-    # does not require admin re-approval to show.
-    photo_filename = Column(String, nullable=True)
+    # Stored as a blob in the DB (not on disk — Render's free tier has
+    # no persistent disk, so a filesystem path would vanish on the next
+    # redeploy). photo_version changes on every upload purely so the
+    # frontend's <img src> URL changes too, busting any browser cache.
+    photo_data = Column(LargeBinary, nullable=True)
+    photo_version = Column(String, nullable=True)
 
     # Every create or edit drops back to "pending" until an admin
     # reviews it again — patients only ever see "approved" profiles.
@@ -90,11 +89,12 @@ class ProviderProfile(Base):
 
     @property
     def photo_url(self):
-        """Built from API_BASE_URL at read time, same swap-later
-        pattern as jitsi_join_url — no migration needed if the
-        static-file host changes later."""
-        if self.photo_filename:
-            return f"{API_BASE_URL}/static/{PROVIDER_PHOTO_DIR}/{self.photo_filename}"
+        """Points at the GET /providers/{provider_id}/photo endpoint,
+        which streams photo_data straight from the DB. ?v= is just a
+        cache-buster so a replaced photo shows immediately instead of
+        the browser reusing a cached image at the same URL."""
+        if self.photo_data:
+            return f"{API_BASE_URL}/api/v1/providers/{self.provider_id}/photo?v={self.photo_version}"
         return None
 
 
