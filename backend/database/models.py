@@ -42,7 +42,9 @@ class User(Base):
     external_idp_subject = Column(String, unique=True, nullable=True)  # dev-login / OIDC subject
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    provider_profile = relationship("ProviderProfile", back_populates="user", uselist=False)
+    provider_profile = relationship(
+        "ProviderProfile", back_populates="user", uselist=False, foreign_keys="ProviderProfile.user_id"
+    )
     patient_profile = relationship("PatientProfile", back_populates="user", uselist=False)
 
 
