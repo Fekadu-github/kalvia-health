@@ -1,8 +1,5 @@
-import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from backend.database.db import Base, engine
 from backend.database import models  # noqa: F401 — ensures models are registered before create_all
@@ -24,12 +21,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Serves uploaded provider photos at /static/provider_photos/<file>.
-# ProviderProfile.photo_url builds the full link to these.
-_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-os.makedirs(_STATIC_DIR, exist_ok=True)
-app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 API_PREFIX = "/api/v1"
 app.include_router(auth_router, prefix=API_PREFIX, tags=["auth"])
