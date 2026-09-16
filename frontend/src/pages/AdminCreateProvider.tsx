@@ -10,6 +10,9 @@ export default function AdminCreateProvider() {
   const [specialty, setSpecialty] = useState("");
   const [bio, setBio] = useState("");
   const [languages, setLanguages] = useState("");
+  const [licenseNumber, setLicenseNumber] = useState("");
+  const [yearsExperience, setYearsExperience] = useState("");
+  const [experienceSummary, setExperienceSummary] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<ProviderAccount | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -28,6 +31,9 @@ export default function AdminCreateProvider() {
         specialty,
         bio: bio || undefined,
         languages: languages || undefined,
+        license_number: licenseNumber || undefined,
+        years_experience: yearsExperience ? Number(yearsExperience) : undefined,
+        experience_summary: experienceSummary || undefined,
       });
       setCreated(account);
       setUsername("");
@@ -36,6 +42,9 @@ export default function AdminCreateProvider() {
       setSpecialty("");
       setBio("");
       setLanguages("");
+      setLicenseNumber("");
+      setYearsExperience("");
+      setExperienceSummary("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create the provider account");
     } finally {
@@ -107,6 +116,37 @@ export default function AdminCreateProvider() {
           <label htmlFor="bio">Bio</label>
           <textarea id="bio" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} />
         </div>
+        <div className="form-row">
+          <div className="field">
+            <label htmlFor="licenseNumber">License number (optional)</label>
+            <input id="licenseNumber" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="yearsExperience">Years of experience (optional)</label>
+            <input
+              id="yearsExperience"
+              type="number"
+              min={0}
+              max={80}
+              value={yearsExperience}
+              onChange={(e) => setYearsExperience(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="experienceSummary">Experience summary (optional, shown to patients)</label>
+          <textarea
+            id="experienceSummary"
+            rows={2}
+            value={experienceSummary}
+            onChange={(e) => setExperienceSummary(e.target.value)}
+          />
+        </div>
+        <p style={{ color: "var(--ink-soft)", fontSize: "0.82rem" }}>
+          A profile you create here is auto-approved. If you leave these fields blank, the provider can fill
+          them in themselves from their profile page — that version will need your approval before patients
+          see it.
+        </p>
         <button className="btn" type="submit" disabled={submitting}>
           {submitting ? "Creating…" : "Create provider account"}
         </button>

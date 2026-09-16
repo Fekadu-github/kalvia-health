@@ -36,6 +36,33 @@ async function request<T>(
   return res.json();
 }
 
+async function requestMultipart<T>(
+  path: string,
+  method: string,
+  formData: FormData,
+  token?: string | null
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  // No Content-Type here on purpose — the browser sets
+  // multipart/form-data with the right boundary itself.
+  const res = await fetch(`${API_BASE}${path}`, { method, headers, body: formData });
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail || detail;
+    } catch {
+      /* no json body */
+    }
+    throw new ApiError(res.status, detail);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
 export interface DevLoginPayload {
   username: string;
   full_name: string;
@@ -68,12 +95,36 @@ export interface ProviderCreatePayload {
   specialty: string;
   bio?: string;
   languages?: string;
+  license_number?: string;
+  years_experience?: number;
+  experience_summary?: string;
 }
 
 export interface ProviderAccount {
   username: string;
   full_name: string;
   provider_id: string;
+}
+
+export type ProviderApprovalStatus = "pending" | "approved" | "rejected";
+
+export interface MyProviderProfilePayload {
+  specialty: string;
+  bio?: string;
+  languages?: string;
+  license_number: string;
+  years_experience?: number;
+  experience_summary?: string;
+}
+
+export interface MyProviderProfileUpdatePayload {
+  specialty?: string;
+  bio?: string;
+  languages?: string;
+  license_number?: string;
+  years_experience?: number;
+  experience_summary?: string;
+  accepting_new_cases?: boolean;
 }
 
 export interface TokenResponse {
@@ -85,11 +136,19 @@ export interface TokenResponse {
 
 export interface Provider {
   provider_id: string;
-  user_id: string;
+  user_id?: string; // present only on the full (admin/provider-self) view, not the patient-facing view
   specialty: string;
   bio: string | null;
   languages: string | null;
   accepting_new_cases: string;
+  years_experience?: number | null;
+  experience_summary?: string | null;
+  photo_url?: string | null;
+  // Full-profile-only fields — absent from what patients receive.
+  license_number?: string | null;
+  approval_status?: ProviderApprovalStatus;
+  rejection_reason?: string | null;
+  approved_at?: string | null;
 }
 
 export interface Case {
@@ -158,6 +217,42 @@ export interface Triage {
   updated_at: string;
 }
 
+export interface AdminUserSummary {
+  user_id: string;
+  full_name: string;
+  username: string;
+  email: string | null;
+  phone_number: string | null;
+}
+
+export interface AdminCaseSummary {
+  case_id: string;
+  status: "open" | "in_follow_up" | "closed";
+  reason: string;
+  created_at: string;
+  updated_at: string;
+  patient: AdminUserSummary;
+  appointments: Appointment[];
+}
+
+export interface AdminProviderOverview {
+  provider: Provider;
+  user: AdminUserSummary;
+  patient_count: number;
+  case_count: number;
+  cases: AdminCaseSummary[];
+}
+
+export interface AdminSummary {
+  total_providers: number;
+  total_patients: number;
+  total_cases: number;
+  total_appointments: number;
+  providers_pending_approval: number;
+  cases_by_status: Record<string, number>;
+  appointments_by_status: Record<string, number>;
+}
+
 export const api = {
   devLogin: (payload: DevLoginPayload) =>
     request<TokenResponse>("/auth/dev-login", {
@@ -174,21 +269,6 @@ export const api = {
   providerLogin: (payload: ProviderLoginPayload) =>
     request<TokenResponse>("/auth/provider/login", { method: "POST", body: JSON.stringify(payload) }),
 
-  adminBootstrap: (payload: { bootstrap_secret: string; username: string; full_name: string; password: string }) =>
-    request<TokenResponse>("/auth/admin/bootstrap", { method: "POST", body: JSON.stringify(payload) }),
-
-  adminLogin: (payload: { username: string; password: string }) =>
-    request<TokenResponse>("/auth/admin/login", { method: "POST", body: JSON.stringify(payload) }),
-
-  requestPasswordReset: (identifier: string) =>
-    request<{ message: string }>("/auth/password-reset/request", {
-      method: "POST",
-      body: JSON.stringify({ identifier }),
-    }),
-
-  confirmPasswordReset: (payload: { identifier: string; code: string; new_password: string }) =>
-    request<TokenResponse>("/auth/password-reset/confirm", { method: "POST", body: JSON.stringify(payload) }),
-
   createProviderAccount: (token: string, payload: ProviderCreatePayload) =>
     request<ProviderAccount>("/auth/admin/create-provider", { method: "POST", body: JSON.stringify(payload) }, token),
 
@@ -201,14 +281,41 @@ export const api = {
       token
     ),
 
-  createMyProviderProfile: (
-    token: string,
-    payload: { specialty: string; bio?: string; languages?: string }
-  ) =>
+  createMyProviderProfile: (token: string, payload: MyProviderProfilePayload) =>
     request<Provider>("/providers/me", {
       method: "POST",
       body: JSON.stringify(payload),
     }, token),
+
+  getMyProviderProfile: (token: string) => request<Provider>("/providers/me", {}, token),
+
+  updateMyProviderProfile: (token: string, payload: MyProviderProfileUpdatePayload) =>
+    request<Provider>("/providers/me", { method: "PATCH", body: JSON.stringify(payload) }, token),
+
+  uploadMyProviderPhoto: (token: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return requestMultipart<Provider>("/providers/me/photo", "PUT", formData, token);
+  },
+
+  deleteMyProviderPhoto: (token: string) =>
+    request<Provider>("/providers/me/photo", { method: "DELETE" }, token),
+
+  approveProvider: (token: string, providerId: string) =>
+    request<Provider>(`/providers/${providerId}/approve`, { method: "POST" }, token),
+
+  rejectProvider: (token: string, providerId: string, rejectionReason?: string) =>
+    request<Provider>(
+      `/providers/${providerId}/reject`,
+      { method: "POST", body: JSON.stringify({ rejection_reason: rejectionReason }) },
+      token
+    ),
+
+  // --- Admin dashboard ---
+  getAdminProvidersOverview: (token: string) =>
+    request<AdminProviderOverview[]>("/admin/providers-overview", {}, token),
+
+  getAdminSummary: (token: string) => request<AdminSummary>("/admin/summary", {}, token),
 
   listMyCases: (token: string) => request<Case[]>("/cases", {}, token),
 

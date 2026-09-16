@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.database.models import Role, CaseStatus, ConsultationType, AppointmentStatus
+from backend.database.models import Role, CaseStatus, ConsultationType, AppointmentStatus, ProviderApprovalStatus
 
 
 # --- Auth ---
@@ -45,6 +45,9 @@ class ProviderCreateByAdmin(BaseModel):
     specialty: str
     bio: Optional[str] = None
     languages: Optional[str] = None
+    license_number: Optional[str] = None
+    years_experience: Optional[int] = Field(default=None, ge=0, le=80)
+    experience_summary: Optional[str] = None
 
 
 class ProviderAccountOut(BaseModel):
@@ -53,42 +56,33 @@ class ProviderAccountOut(BaseModel):
     provider_id: str
 
 
-class AdminBootstrapRequest(BaseModel):
-    bootstrap_secret: str
-    username: str
-    full_name: str
-    password: str = Field(min_length=8)
-
-
-class AdminLoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-class AdminCreateAdmin(BaseModel):
-    username: str
-    full_name: str
-    password: str = Field(min_length=8)
-
-
-class PasswordResetRequest(BaseModel):
-    identifier: str  # email, phone, or username
-
-
-class PasswordResetConfirm(BaseModel):
-    identifier: str
-    code: str
-    new_password: str = Field(min_length=8)
-
-
 # --- Providers ---
 class ProviderCreate(BaseModel):
     specialty: str
     bio: Optional[str] = None
     languages: Optional[str] = None
+    license_number: str
+    years_experience: Optional[int] = Field(default=None, ge=0, le=80)
+    experience_summary: Optional[str] = None
+
+
+class ProviderUpdate(BaseModel):
+    """Every field optional — a provider can update just the piece
+    that changed. Any change resubmits the profile for admin
+    approval, so this never touches approval_status directly."""
+    specialty: Optional[str] = None
+    bio: Optional[str] = None
+    languages: Optional[str] = None
+    license_number: Optional[str] = None
+    years_experience: Optional[int] = Field(default=None, ge=0, le=80)
+    experience_summary: Optional[str] = None
+    accepting_new_cases: Optional[bool] = None
 
 
 class ProviderOut(BaseModel):
+    """Full profile — what the provider sees of their own record, and
+    what admins see. Includes the license number and approval
+    workflow fields that patients never get."""
     model_config = ConfigDict(from_attributes=True)
     provider_id: str
     user_id: str
@@ -96,6 +90,32 @@ class ProviderOut(BaseModel):
     bio: Optional[str]
     languages: Optional[str]
     accepting_new_cases: str
+    license_number: Optional[str]
+    years_experience: Optional[int]
+    experience_summary: Optional[str]
+    approval_status: ProviderApprovalStatus
+    rejection_reason: Optional[str]
+    approved_at: Optional[datetime]
+    photo_url: Optional[str] = None
+
+
+class ProviderPublicOut(BaseModel):
+    """What a patient sees in the directory — specialty, bio,
+    languages, and the experience summary, but never the license
+    number or the approval workflow state."""
+    model_config = ConfigDict(from_attributes=True)
+    provider_id: str
+    specialty: str
+    bio: Optional[str]
+    languages: Optional[str]
+    accepting_new_cases: str
+    years_experience: Optional[int]
+    experience_summary: Optional[str]
+    photo_url: Optional[str] = None
+
+
+class ProviderRejectRequest(BaseModel):
+    rejection_reason: Optional[str] = None
 
 
 # --- Cases ---
@@ -188,6 +208,44 @@ class TriageUpsert(BaseModel):
     allergies: Optional[str] = None
     additional_notes: Optional[str] = None
     mark_complete: bool = False
+
+
+# --- Admin dashboard ---
+class AdminUserSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    user_id: str
+    full_name: str
+    username: str
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+
+
+class AdminCaseSummary(BaseModel):
+    case_id: str
+    status: CaseStatus
+    reason: str
+    created_at: datetime
+    updated_at: datetime
+    patient: AdminUserSummary
+    appointments: List[AppointmentOut]
+
+
+class AdminProviderOverview(BaseModel):
+    provider: ProviderOut
+    user: AdminUserSummary
+    patient_count: int
+    case_count: int
+    cases: List[AdminCaseSummary]
+
+
+class AdminSummary(BaseModel):
+    total_providers: int
+    total_patients: int
+    total_cases: int
+    total_appointments: int
+    providers_pending_approval: int
+    cases_by_status: dict
+    appointments_by_status: dict
 
 
 class TriageOut(BaseModel):

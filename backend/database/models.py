@@ -9,6 +9,8 @@ from sqlalchemy.orm import relationship
 from backend.database.db import Base
 
 JITSI_BASE_URL = os.getenv("JITSI_BASE_URL", "https://meet.jit.si")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+PROVIDER_PHOTO_DIR = "provider_photos"
 
 
 def gen_id(prefix: str) -> str:
@@ -44,6 +46,12 @@ class User(Base):
     patient_profile = relationship("PatientProfile", back_populates="user", uselist=False)
 
 
+class ProviderApprovalStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class ProviderProfile(Base):
     __tablename__ = "provider_profiles"
 
@@ -54,7 +62,38 @@ class ProviderProfile(Base):
     languages = Column(String, nullable=True)  # comma-separated for simplicity in Phase 1
     accepting_new_cases = Column(String, default="true")  # "true"/"false" — simple flag for now
 
-    user = relationship("User", back_populates="provider_profile")
+    # Credentials the provider fills in themselves, then submits for
+    # admin sign-off. license_number is only ever shown to the
+    # provider themselves and admins; experience_summary is the one
+    # field patients get to see (in the public directory).
+    license_number = Column(String, nullable=True)
+    years_experience = Column(Integer, nullable=True)
+    experience_summary = Column(Text, nullable=True)
+
+    # A 3:4 portrait photo, stored under /static/provider_photos.
+    # Filename carries a fresh random suffix on every upload so
+    # browsers never serve a stale cached image after a change, and
+    # it updates immediately — unlike the fields above, a new photo
+    # does not require admin re-approval to show.
+    photo_filename = Column(String, nullable=True)
+
+    # Every create or edit drops back to "pending" until an admin
+    # reviews it again — patients only ever see "approved" profiles.
+    approval_status = Column(Enum(ProviderApprovalStatus), default=ProviderApprovalStatus.pending, nullable=False)
+    rejection_reason = Column(Text, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    approved_by_user_id = Column(String, ForeignKey("users.user_id"), nullable=True)
+
+    user = relationship("User", back_populates="provider_profile", foreign_keys=[user_id])
+
+    @property
+    def photo_url(self):
+        """Built from API_BASE_URL at read time, same swap-later
+        pattern as jitsi_join_url — no migration needed if the
+        static-file host changes later."""
+        if self.photo_filename:
+            return f"{API_BASE_URL}/static/{PROVIDER_PHOTO_DIR}/{self.photo_filename}"
+        return None
 
 
 class PatientProfile(Base):
@@ -210,20 +249,3 @@ class Triage(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     case = relationship("Case", back_populates="triage")
-
-
-class PasswordReset(Base):
-    """
-    A short-lived, single-use code for the forgot-password flow.
-    New table (not new columns on an existing table) on purpose —
-    it means a fresh deploy just works with create_all(), no manual
-    ALTER TABLE needed on the live database.
-    """
-    __tablename__ = "password_resets"
-
-    reset_id = Column(String, primary_key=True, default=lambda: gen_id("reset"))
-    user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
-    code_hash = Column(String, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    used = Column(String, default="false")  # "true"/"false", same convention used elsewhere in this app
-    created_at = Column(DateTime, default=datetime.utcnow)

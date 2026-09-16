@@ -49,41 +49,56 @@ export default function ProviderDirectory() {
         </div>
       ) : (
         providers.map((p) => (
-          <div key={p.provider_id} className="list-row">
-            <div className="list-row-title">{p.specialty.replace(/_/g, " ")}</div>
-            <div className="list-row-meta">
-              {p.bio || "No bio provided."} {p.languages ? `· Speaks ${p.languages}` : ""}
-            </div>
-
-            {session?.role === "patient" && (
-              <div style={{ marginTop: "0.7em" }}>
-                {openingFor === p.provider_id ? (
-                  <div>
-                    <textarea
-                      placeholder="Briefly describe why you'd like to see this provider"
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      rows={3}
-                      style={{ marginBottom: "0.6em" }}
-                    />
-                    <button
-                      className="btn"
-                      disabled={submitting || !reason.trim()}
-                      onClick={() => submitCase(p.provider_id)}
-                    >
-                      {submitting ? "Opening…" : "Open case"}
-                    </button>{" "}
-                    <button className="btn-outline btn" onClick={() => setOpeningFor(null)}>
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button className="btn-outline btn" onClick={() => setOpeningFor(p.provider_id)}>
-                    Open a case
-                  </button>
-                )}
-              </div>
+          <div key={p.provider_id} className="list-row" style={{ display: "flex", gap: "1em" }}>
+            {p.photo_url && (
+              <img
+                src={p.photo_url}
+                alt=""
+                style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 4, flexShrink: 0 }}
+              />
             )}
+            <div style={{ flex: 1 }}>
+              <div className="list-row-title">{p.specialty.replace(/_/g, " ")}</div>
+              <div className="list-row-meta">
+                {p.bio || "No bio provided."} {p.languages ? `· Speaks ${p.languages}` : ""}
+                {p.years_experience != null ? ` · ${p.years_experience} yrs experience` : ""}
+              </div>
+              {p.experience_summary && (
+                <div className="list-row-meta" style={{ marginTop: "0.3em" }}>
+                  {p.experience_summary}
+                </div>
+              )}
+
+              {session?.role === "patient" && (
+                <div style={{ marginTop: "0.7em" }}>
+                  {openingFor === p.provider_id ? (
+                    <div>
+                      <textarea
+                        placeholder="Briefly describe why you'd like to see this provider"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        rows={3}
+                        style={{ marginBottom: "0.6em" }}
+                      />
+                      <button
+                        className="btn"
+                        disabled={submitting || !reason.trim()}
+                        onClick={() => submitCase(p.provider_id)}
+                      >
+                        {submitting ? "Opening…" : "Open case"}
+                      </button>{" "}
+                      <button className="btn-outline btn" onClick={() => setOpeningFor(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="btn-outline btn" onClick={() => setOpeningFor(p.provider_id)}>
+                      Open a case
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         ))
       )}
