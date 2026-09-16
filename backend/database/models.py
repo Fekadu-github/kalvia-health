@@ -210,3 +210,20 @@ class Triage(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     case = relationship("Case", back_populates="triage")
+
+
+class PasswordReset(Base):
+    """
+    A short-lived, single-use code for the forgot-password flow.
+    New table (not new columns on an existing table) on purpose —
+    it means a fresh deploy just works with create_all(), no manual
+    ALTER TABLE needed on the live database.
+    """
+    __tablename__ = "password_resets"
+
+    reset_id = Column(String, primary_key=True, default=lambda: gen_id("reset"))
+    user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
+    code_hash = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(String, default="false")  # "true"/"false", same convention used elsewhere in this app
+    created_at = Column(DateTime, default=datetime.utcnow)

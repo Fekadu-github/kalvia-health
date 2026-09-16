@@ -53,6 +53,34 @@ class ProviderAccountOut(BaseModel):
     provider_id: str
 
 
+class AdminBootstrapRequest(BaseModel):
+    bootstrap_secret: str
+    username: str
+    full_name: str
+    password: str = Field(min_length=8)
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AdminCreateAdmin(BaseModel):
+    username: str
+    full_name: str
+    password: str = Field(min_length=8)
+
+
+class PasswordResetRequest(BaseModel):
+    identifier: str  # email, phone, or username
+
+
+class PasswordResetConfirm(BaseModel):
+    identifier: str
+    code: str
+    new_password: str = Field(min_length=8)
+
+
 # --- Providers ---
 class ProviderCreate(BaseModel):
     specialty: str
