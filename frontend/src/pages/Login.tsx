@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useAuth } from "../context/AuthContext";
+import AuthVisual from "../components/AuthVisual";
 
 type Mode = "patient-login" | "patient-signup" | "provider-login";
 
@@ -87,10 +88,11 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-screen">
-      <div className="auth-card">
-        <h1>Kalvia Health</h1>
-        <p style={{ color: "var(--ink-soft)", marginTop: "-0.6em" }}>
+    <div className="auth-split">
+      <AuthVisual />
+      <div className="auth-form-panel">
+        <div className="auth-card">
+        <p style={{ color: "var(--ink-soft)", marginBottom: "0.2em" }}>
           {mode === "provider-login" ? "Provider sign in." : "Sign in to continue."}
         </p>
 
@@ -227,6 +229,7 @@ export default function Login() {
         <p className="auth-switch">
           <Link to="/admin/login">Admin sign in</Link>
         </p>
+        </div>
       </div>
     </div>
   );
