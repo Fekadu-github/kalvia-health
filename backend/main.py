@@ -10,7 +10,7 @@ from backend.payments.routes import router as payments_router
 from backend.cases.routes import router as cases_router
 from backend.appointments.routes import router as appointments_router
 from backend.prescriptions.routes import router as prescriptions_router
-from backend.triage.routes import router as triage_router
+from backend.auth.triage.routes import router as triage_router
 from backend.admin.routes import router as admin_router
 
 Base.metadata.create_all(bind=engine)
