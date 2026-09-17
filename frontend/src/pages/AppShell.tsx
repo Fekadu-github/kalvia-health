@@ -18,6 +18,11 @@ export default function AppShell() {
           <NavLink to="/appointments" className={({ isActive }) => (isActive ? "active" : "")}>
             Appointments
           </NavLink>
+          {session?.role === "patient" && (
+            <NavLink to="/payments" className={({ isActive }) => (isActive ? "active" : "")}>
+              Payments & documents
+            </NavLink>
+          )}
           {session?.role === "provider" && (
             <NavLink to="/providers/setup" className={({ isActive }) => (isActive ? "active" : "")}>
               My profile
@@ -30,6 +35,9 @@ export default function AppShell() {
               </NavLink>
               <NavLink to="/admin/providers" className={({ isActive }) => (isActive ? "active" : "")}>
                 Create provider
+              </NavLink>
+              <NavLink to="/admin/payments" className={({ isActive }) => (isActive ? "active" : "")}>
+                Payment review
               </NavLink>
             </>
           )}

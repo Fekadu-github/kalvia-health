@@ -1,12 +1,14 @@
+from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database.db import get_db
-from backend.database.models import Prescription, Appointment, User, Role
+from backend.database.models import Prescription, Appointment, PatientProfile, User, Role, PaymentType
 from backend.auth.security import get_current_user
 from backend.access import get_case_or_404, assert_case_participant
+from backend.payments.rules import find_unconsumed_approved, mark_activity
 from backend import schemas
 
 router = APIRouter()
@@ -29,6 +31,17 @@ def issue_prescription(
         if not appointment or appointment.case_id != case.case_id:
             raise HTTPException(400, "Appointment does not belong to this case")
 
+    patient_profile = db.query(PatientProfile).filter(PatientProfile.patient_id == case.patient_id).first()
+    prescription_payment = find_unconsumed_approved(
+        db, case.patient_id, PaymentType.prescription, case_id=case.case_id
+    )
+    if not prescription_payment:
+        raise HTTPException(
+            402,
+            "Prescription fee required. Have the patient submit a prescription payment for this case "
+            "and wait for admin approval before issuing.",
+        )
+
     prescription = Prescription(
         case_id=case.case_id,
         appointment_id=payload.appointment_id,
@@ -38,6 +51,12 @@ def issue_prescription(
         instructions=payload.instructions,
     )
     db.add(prescription)
+
+    prescription_payment.case_id = case.case_id
+    prescription_payment.consumed_at = datetime.utcnow()
+    if patient_profile:
+        mark_activity(db, patient_profile)
+
     db.commit()
     db.refresh(prescription)
     return prescription

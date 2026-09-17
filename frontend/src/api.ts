@@ -235,6 +235,35 @@ export interface Triage {
   updated_at: string;
 }
 
+export type PaymentType = "registration" | "first_consultation" | "video_consultation" | "prescription";
+export type PaymentStatus = "pending" | "approved" | "rejected";
+
+export interface PatientMeOut {
+  patient_id: string;
+  has_id_document: boolean;
+  id_document_uploaded_at: string | null;
+  registration_active: boolean;
+}
+
+export interface Payment {
+  payment_id: string;
+  patient_id: string;
+  payment_type: PaymentType;
+  case_id: string | null;
+  amount: string | null;
+  reference_note: string | null;
+  status: PaymentStatus;
+  rejection_reason: string | null;
+  reviewed_at: string | null;
+  consumed_at: string | null;
+  created_at: string;
+  has_proof: boolean;
+}
+
+export interface AdminPayment extends Payment {
+  patient: AdminUserSummary;
+}
+
 export interface AdminUserSummary {
   user_id: string;
   full_name: string;
@@ -419,4 +448,69 @@ export const api = {
   ) => request<Triage>(`/cases/${caseId}/triage`, { method: "PUT", body: JSON.stringify(payload) }, token),
 
   getTriage: (token: string, caseId: string) => request<Triage | null>(`/cases/${caseId}/triage`, {}, token),
+
+  // --- Patients (ID document, account status) ---
+  getMyPatientStatus: (token: string) => request<PatientMeOut>("/patients/me", {}, token),
+
+  uploadMyIdDocument: (token: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return requestMultipart<PatientMeOut>("/patients/me/id-document", "PUT", formData, token);
+  },
+
+  // Authenticated image/PDF fetches — these endpoints require a Bearer
+  // token, so they can't be used directly as an <img src>. Callers
+  // turn the blob into an object URL (see pages/Payments.tsx).
+  fetchMyIdDocument: async (token: string): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/patients/me/id-document`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new ApiError(res.status, res.statusText);
+    return res.blob();
+  },
+
+  fetchPatientIdDocument: async (token: string, patientId: string): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/admin/patients/${patientId}/id-document`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new ApiError(res.status, res.statusText);
+    return res.blob();
+  },
+
+  // --- Payments ---
+  submitPayment: (
+    token: string,
+    payload: { payment_type: PaymentType; case_id?: string; amount?: string; reference_note?: string; proof?: File }
+  ) => {
+    const formData = new FormData();
+    formData.append("payment_type", payload.payment_type);
+    if (payload.case_id) formData.append("case_id", payload.case_id);
+    if (payload.amount) formData.append("amount", payload.amount);
+    if (payload.reference_note) formData.append("reference_note", payload.reference_note);
+    if (payload.proof) formData.append("proof", payload.proof);
+    return requestMultipart<Payment>("/payments", "POST", formData, token);
+  },
+
+  listMyPayments: (token: string) => request<Payment[]>("/payments", {}, token),
+
+  fetchPaymentProof: async (token: string, paymentId: string): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/payments/${paymentId}/proof`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new ApiError(res.status, res.statusText);
+    return res.blob();
+  },
+
+  adminListPayments: (token: string, status?: PaymentStatus) =>
+    request<AdminPayment[]>(`/admin/payments${status ? `?status=${status}` : ""}`, {}, token),
+
+  adminApprovePayment: (token: string, paymentId: string) =>
+    request<Payment>(`/admin/payments/${paymentId}/approve`, { method: "POST" }, token),
+
+  adminRejectPayment: (token: string, paymentId: string, rejectionReason?: string) =>
+    request<Payment>(
+      `/admin/payments/${paymentId}/reject`,
+      { method: "POST", body: JSON.stringify({ rejection_reason: rejectionReason }) },
+      token
+    ),
 };

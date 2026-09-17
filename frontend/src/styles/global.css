@@ -118,6 +118,9 @@ label {
 .status-pill.confirmed { border-color: var(--primary); color: var(--primary); }
 .status-pill.completed { color: var(--ink-soft); }
 .status-pill.cancelled { border-color: var(--alert); color: var(--alert); }
+.status-pill.pending { border-color: var(--accent); color: var(--accent); }
+.status-pill.approved { border-color: var(--primary); color: var(--primary); }
+.status-pill.rejected { border-color: var(--alert); color: var(--alert); }
 
 .error-text {
   color: var(--alert);

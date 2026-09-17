@@ -5,6 +5,8 @@ from backend.database.db import Base, engine
 from backend.database import models  # noqa: F401 — ensures models are registered before create_all
 from backend.auth.routes import router as auth_router
 from backend.providers.routes import router as providers_router
+from backend.patients.routes import router as patients_router
+from backend.payments.routes import router as payments_router
 from backend.cases.routes import router as cases_router
 from backend.appointments.routes import router as appointments_router
 from backend.prescriptions.routes import router as prescriptions_router
@@ -13,7 +15,7 @@ from backend.admin.routes import router as admin_router
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Kalvia Health API", version="0.3.0-phase3")
+app = FastAPI(title="Kalvia Health API", version="0.4.0-phase4")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,6 +27,8 @@ app.add_middleware(
 API_PREFIX = "/api/v1"
 app.include_router(auth_router, prefix=API_PREFIX, tags=["auth"])
 app.include_router(providers_router, prefix=API_PREFIX, tags=["providers"])
+app.include_router(patients_router, prefix=API_PREFIX, tags=["patients"])
+app.include_router(payments_router, prefix=API_PREFIX, tags=["payments"])
 app.include_router(cases_router, prefix=API_PREFIX, tags=["cases"])
 app.include_router(appointments_router, prefix=API_PREFIX, tags=["appointments"])
 app.include_router(prescriptions_router, prefix=API_PREFIX, tags=["prescriptions"])
@@ -34,4 +38,4 @@ app.include_router(admin_router, prefix=API_PREFIX, tags=["admin"])
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "phase": "3 — patient/provider auth, triage intake"}
+    return {"status": "ok", "phase": "4 — payments, ID verification"}

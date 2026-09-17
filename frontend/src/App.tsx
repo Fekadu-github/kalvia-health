@@ -13,6 +13,8 @@ import CaseDetail from "./pages/CaseDetail";
 import Appointments from "./pages/Appointments";
 import AdminCreateProvider from "./pages/AdminCreateProvider";
 import AdminOverview from "./pages/AdminOverview";
+import Payments from "./pages/Payments";
+import AdminPayments from "./pages/AdminPayments";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { session } = useAuth();
@@ -45,8 +47,10 @@ function AppRoutes() {
         <Route path="/cases" element={<Cases />} />
         <Route path="/cases/:caseId" element={<CaseDetail />} />
         <Route path="/appointments" element={<Appointments />} />
+        <Route path="/payments" element={<Payments />} />
         <Route path="/admin/providers" element={<AdminCreateProvider />} />
         <Route path="/admin/overview" element={<AdminOverview />} />
+        <Route path="/admin/payments" element={<AdminPayments />} />
         <Route path="/" element={<RoleHome />} />
       </Route>
     </Routes>

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,9 +15,11 @@ from backend.database.models import (
     ProviderProfile,
     User,
     Role,
+    PaymentType,
 )
 from backend.auth.security import get_current_user
 from backend.access import get_case_or_404, assert_case_participant
+from backend.payments.rules import find_unconsumed_approved, mark_activity
 from backend import schemas
 
 router = APIRouter()
@@ -36,9 +39,35 @@ def request_appointment(
 ):
     """Either side of a case can request an appointment. Video
     consultations get a Jitsi room right away, so it's ready the
-    moment the provider confirms."""
+    moment the provider confirms.
+
+    Two gates before this succeeds:
+    - the patient on the case must have a national ID/passport on
+      file (backend/patients/routes.py's upload endpoint)
+    - a video appointment additionally needs an unconsumed,
+      admin-approved video_consultation payment for this case
+    """
     case = get_case_or_404(db, payload.case_id)
     assert_case_participant(case, user, db)
+
+    patient_profile = db.query(PatientProfile).filter(PatientProfile.patient_id == case.patient_id).first()
+    if not patient_profile or not patient_profile.has_id_document:
+        raise HTTPException(
+            403,
+            "This patient needs to upload a national ID or passport before an appointment can be booked.",
+        )
+
+    video_payment = None
+    if payload.consultation_type == ConsultationType.video:
+        video_payment = find_unconsumed_approved(
+            db, patient_profile.patient_id, PaymentType.video_consultation, case_id=case.case_id
+        )
+        if not video_payment:
+            raise HTTPException(
+                402,
+                "Video consultation fee required. Submit a video_consultation payment for this case "
+                "and wait for admin approval before booking.",
+            )
 
     appointment = Appointment(
         case_id=case.case_id,
@@ -52,6 +81,12 @@ def request_appointment(
         appointment.jitsi_room_name = _make_room_name(case.case_id)
 
     db.add(appointment)
+
+    if video_payment:
+        video_payment.case_id = case.case_id
+        video_payment.consumed_at = datetime.utcnow()
+        mark_activity(db, patient_profile)
+
     db.commit()
     db.refresh(appointment)
     return appointment
