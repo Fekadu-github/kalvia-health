@@ -106,7 +106,24 @@ class PatientProfile(Base):
     date_of_birth = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
 
+    # Bumped whenever the patient uses a paid service (see
+    # backend/payments/rules.py:mark_activity) — drives the 90-day
+    # registration-fee lapse window.
+    last_active_at = Column(DateTime, nullable=True)
+
+    # National ID / passport, stored as a DB blob for the same reason
+    # as provider photos and payment proofs (no persistent disk on
+    # Render's free tier).
+    id_document_data = Column(LargeBinary, nullable=True)
+    id_document_content_type = Column(String, nullable=True)
+    id_document_filename = Column(String, nullable=True)
+    id_document_uploaded_at = Column(DateTime, nullable=True)
+
     user = relationship("User", back_populates="patient_profile")
+
+    @property
+    def has_id_document(self):
+        return self.id_document_data is not None
 
 
 class CaseStatus(str, enum.Enum):
@@ -251,3 +268,57 @@ class Triage(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     case = relationship("Case", back_populates="triage")
+
+
+class PaymentType(str, enum.Enum):
+    registration = "registration"
+    first_consultation = "first_consultation"
+    video_consultation = "video_consultation"
+    prescription = "prescription"
+
+
+class PaymentStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class Payment(Base):
+    """
+    A manually-reviewed payment claim: the patient states what they
+    paid (optionally attaching a screenshot) and an admin approves or
+    rejects it. registration and first_consultation are submitted
+    before any case exists, so case_id starts out null for those and
+    gets filled in once it's actually consumed (see
+    backend/payments/rules.py:find_unconsumed_approved).
+    """
+    __tablename__ = "payments"
+
+    payment_id = Column(String, primary_key=True, default=lambda: gen_id("pay"))
+    patient_id = Column(String, ForeignKey("patient_profiles.patient_id"), nullable=False)
+    payment_type = Column(Enum(PaymentType), nullable=False)
+    case_id = Column(String, ForeignKey("cases.case_id"), nullable=True)
+
+    amount = Column(String, nullable=True)
+    reference_note = Column(Text, nullable=True)
+    proof_data = Column(LargeBinary, nullable=True)
+    proof_content_type = Column(String, nullable=True)
+
+    status = Column(Enum(PaymentStatus), default=PaymentStatus.pending, nullable=False)
+    rejection_reason = Column(Text, nullable=True)
+    reviewed_by_user_id = Column(String, ForeignKey("users.user_id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+
+    # Set once this approved payment has actually been used to gate
+    # a case/appointment/prescription — see find_unconsumed_approved,
+    # which only ever hands out payments where this is still null.
+    consumed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("PatientProfile")
+    case = relationship("Case")
+
+    @property
+    def has_proof(self):
+        return self.proof_data is not None

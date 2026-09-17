@@ -2,7 +2,15 @@ from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.database.models import Role, CaseStatus, ConsultationType, AppointmentStatus, ProviderApprovalStatus
+from backend.database.models import (
+    Role,
+    CaseStatus,
+    ConsultationType,
+    AppointmentStatus,
+    ProviderApprovalStatus,
+    PaymentType,
+    PaymentStatus,
+)
 
 
 # --- Auth ---
@@ -302,6 +310,38 @@ class AdminSummary(BaseModel):
     providers_pending_approval: int
     cases_by_status: dict
     appointments_by_status: dict
+
+
+# --- Patients / Payments ---
+class PatientMeOut(BaseModel):
+    patient_id: str
+    has_id_document: bool
+    id_document_uploaded_at: Optional[datetime]
+    registration_active: bool
+
+
+class PaymentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    payment_id: str
+    patient_id: str
+    payment_type: PaymentType
+    case_id: Optional[str]
+    amount: Optional[str]
+    reference_note: Optional[str]
+    status: PaymentStatus
+    rejection_reason: Optional[str]
+    reviewed_at: Optional[datetime]
+    consumed_at: Optional[datetime]
+    created_at: datetime
+    has_proof: bool
+
+
+class PaymentAdminOut(PaymentOut):
+    patient: AdminUserSummary
+
+
+class PaymentRejectRequest(BaseModel):
+    rejection_reason: Optional[str] = None
 
 
 class TriageOut(BaseModel):
