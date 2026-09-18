@@ -13,6 +13,7 @@ from backend.database.models import (
     ProviderApprovalStatus,
     User,
     Role,
+    Case,
 )
 from backend.auth.security import get_current_user, require_role
 from backend import schemas
@@ -272,3 +273,72 @@ def reject_provider(
     db.commit()
     db.refresh(profile)
     return profile
+
+
+@router.patch("/providers/{provider_id}", response_model=schemas.ProviderOut)
+def admin_update_provider(
+    provider_id: str,
+    payload: schemas.ProviderAdminUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(Role.admin)),
+):
+    """An admin editing a profile directly is itself the sign-off, so
+    — unlike a provider editing their own profile — this never resets
+    approval_status back to pending."""
+    profile = db.query(ProviderProfile).filter(ProviderProfile.provider_id == provider_id).first()
+    if not profile:
+        raise HTTPException(404, "Provider not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+
+    # full_name and title live on the linked User, not the profile.
+    user_updates = {}
+    for field in ("full_name", "title"):
+        if field in updates:
+            user_updates[field] = updates.pop(field)
+    if user_updates:
+        if not profile.user:
+            raise HTTPException(404, "This provider's account record is missing")
+        for field, value in user_updates.items():
+            setattr(profile.user, field, value)
+
+    if "accepting_new_cases" in updates:
+        updates["accepting_new_cases"] = "true" if updates.pop("accepting_new_cases") else "false"
+
+    for field, value in updates.items():
+        setattr(profile, field, value)
+
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@router.delete("/providers/{provider_id}", response_model=schemas.MessageResponse)
+def admin_delete_provider(
+    provider_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(Role.admin)),
+):
+    """Removes the provider's profile and login entirely. Blocked
+    once the provider has any cases on record — deleting them would
+    orphan a patient's case history, so a provider with existing
+    cases should be rejected or set to not-accepting instead of
+    deleted."""
+    profile = db.query(ProviderProfile).filter(ProviderProfile.provider_id == provider_id).first()
+    if not profile:
+        raise HTTPException(404, "Provider not found")
+
+    has_cases = db.query(Case).filter(Case.provider_id == provider_id).first() is not None
+    if has_cases:
+        raise HTTPException(
+            409,
+            "This provider has existing cases on record and can't be deleted. "
+            "Reject their profile or turn off 'accepting new cases' instead.",
+        )
+
+    user = profile.user
+    db.delete(profile)
+    if user:
+        db.delete(user)
+    db.commit()
+    return schemas.MessageResponse(message="Provider account deleted")

@@ -5,6 +5,7 @@ interface Session {
   userId: string;
   role: string;
   fullName: string;
+  title?: string | null;
 }
 
 interface AuthContextValue {

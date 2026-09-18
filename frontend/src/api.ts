@@ -147,11 +147,25 @@ export interface MyProviderProfileUpdatePayload {
   accepting_new_cases?: boolean;
 }
 
+export interface ProviderAdminUpdatePayload {
+  full_name?: string;
+  title?: string;
+  specialty?: string;
+  bio?: string;
+  languages?: string;
+  license_number?: string;
+  years_experience?: number;
+  experience_summary?: string;
+  accepting_new_cases?: boolean;
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;
   user_id: string;
   role: string;
+  full_name: string;
+  title?: string | null;
 }
 
 export interface Provider {
@@ -377,6 +391,12 @@ export const api = {
       { method: "POST", body: JSON.stringify({ rejection_reason: rejectionReason }) },
       token
     ),
+
+  adminUpdateProvider: (token: string, providerId: string, payload: ProviderAdminUpdatePayload) =>
+    request<Provider>(`/providers/${providerId}`, { method: "PATCH", body: JSON.stringify(payload) }, token),
+
+  adminDeleteProvider: (token: string, providerId: string) =>
+    request<{ message: string }>(`/providers/${providerId}`, { method: "DELETE" }, token),
 
   // --- Admin dashboard ---
   getAdminProvidersOverview: (token: string) =>

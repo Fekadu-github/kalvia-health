@@ -23,6 +23,19 @@ export default function AdminOverview() {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFullName, setEditFullName] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editSpecialty, setEditSpecialty] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editLanguages, setEditLanguages] = useState("");
+  const [editLicenseNumber, setEditLicenseNumber] = useState("");
+  const [editYearsExperience, setEditYearsExperience] = useState("");
+  const [editExperienceSummary, setEditExperienceSummary] = useState("");
+  const [editAccepting, setEditAccepting] = useState(true);
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   function load() {
     if (!session) return;
     setLoading(true);
@@ -69,6 +82,57 @@ export default function AdminOverview() {
       load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not reject this provider");
+    } finally {
+      setBusyProviderId(null);
+    }
+  }
+
+  function startEdit(po: AdminProviderOverview) {
+    setEditingId(po.provider.provider_id);
+    setEditFullName(po.user.full_name);
+    setEditTitle(po.user.title || "");
+    setEditSpecialty(po.provider.specialty);
+    setEditBio(po.provider.bio || "");
+    setEditLanguages(po.provider.languages || "");
+    setEditLicenseNumber(po.provider.license_number || "");
+    setEditYearsExperience(po.provider.years_experience != null ? String(po.provider.years_experience) : "");
+    setEditExperienceSummary(po.provider.experience_summary || "");
+    setEditAccepting(po.provider.accepting_new_cases === "true");
+  }
+
+  async function saveEdit(providerId: string) {
+    if (!session) return;
+    setBusyProviderId(providerId);
+    try {
+      await api.adminUpdateProvider(session.token, providerId, {
+        full_name: editFullName,
+        title: editTitle || undefined,
+        specialty: editSpecialty,
+        bio: editBio || undefined,
+        languages: editLanguages || undefined,
+        license_number: editLicenseNumber || undefined,
+        years_experience: editYearsExperience ? Number(editYearsExperience) : undefined,
+        experience_summary: editExperienceSummary || undefined,
+        accepting_new_cases: editAccepting,
+      });
+      setEditingId(null);
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not save these changes");
+    } finally {
+      setBusyProviderId(null);
+    }
+  }
+
+  async function deleteProvider(providerId: string) {
+    if (!session) return;
+    setBusyProviderId(providerId);
+    try {
+      await api.adminDeleteProvider(session.token, providerId);
+      setDeletingId(null);
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not delete this provider");
     } finally {
       setBusyProviderId(null);
     }
@@ -162,6 +226,126 @@ export default function AdminOverview() {
                     }}
                   >
                     Reject
+                  </button>
+                </div>
+              )}
+
+              <div className="row-actions">
+                <button
+                  className="btn-outline btn"
+                  disabled={busyProviderId === po.provider.provider_id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeletingId(null);
+                    editingId === po.provider.provider_id ? setEditingId(null) : startEdit(po);
+                  }}
+                >
+                  {editingId === po.provider.provider_id ? "Cancel edit" : "Edit"}
+                </button>
+                <button
+                  className="btn-outline btn"
+                  disabled={busyProviderId === po.provider.provider_id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingId(null);
+                    setDeletingId(deletingId === po.provider.provider_id ? null : po.provider.provider_id);
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+
+              {deletingId === po.provider.provider_id && (
+                <div className="inline-form" style={{ marginTop: "0.6em", borderColor: "var(--danger, #c0392b)" }}>
+                  <p style={{ marginTop: 0 }}>
+                    Permanently delete {po.user.title ? `${po.user.title} ` : ""}
+                    {po.user.full_name}'s account? This can't be undone.
+                    {po.case_count > 0 &&
+                      " This provider has existing cases, so deletion will be blocked — reject or turn off " +
+                        "'accepting new cases' instead."}
+                  </p>
+                  <button
+                    className="btn"
+                    disabled={busyProviderId === po.provider.provider_id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteProvider(po.provider.provider_id);
+                    }}
+                  >
+                    Confirm delete
+                  </button>
+                </div>
+              )}
+
+              {editingId === po.provider.provider_id && (
+                <div className="inline-form" style={{ marginTop: "0.6em" }} onClick={(e) => e.stopPropagation()}>
+                  <div className="form-row">
+                    <div className="field">
+                      <label>Full name</label>
+                      <input value={editFullName} onChange={(e) => setEditFullName(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label>Title (optional)</label>
+                      <input
+                        placeholder="e.g. Dr., Prof."
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        style={{ maxWidth: "10em" }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="field">
+                      <label>Specialty</label>
+                      <input value={editSpecialty} onChange={(e) => setEditSpecialty(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label>Languages</label>
+                      <input value={editLanguages} onChange={(e) => setEditLanguages(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Bio</label>
+                    <textarea rows={2} value={editBio} onChange={(e) => setEditBio(e.target.value)} />
+                  </div>
+                  <div className="form-row">
+                    <div className="field">
+                      <label>License number</label>
+                      <input value={editLicenseNumber} onChange={(e) => setEditLicenseNumber(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label>Years of experience</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={80}
+                        value={editYearsExperience}
+                        onChange={(e) => setEditYearsExperience(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Experience summary (shown to patients)</label>
+                    <textarea
+                      rows={2}
+                      value={editExperienceSummary}
+                      onChange={(e) => setEditExperienceSummary(e.target.value)}
+                    />
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5em", marginBottom: "0.8em" }}>
+                    <input
+                      type="checkbox"
+                      checked={editAccepting}
+                      onChange={(e) => setEditAccepting(e.target.checked)}
+                    />
+                    Accepting new cases
+                  </label>
+                  <button
+                    className="btn"
+                    disabled={busyProviderId === po.provider.provider_id}
+                    onClick={() => saveEdit(po.provider.provider_id)}
+                  >
+                    {busyProviderId === po.provider.provider_id ? "Saving…" : "Save changes"}
                   </button>
                 </div>
               )}

@@ -25,8 +25,8 @@ export default function Login() {
   const [providerUsername, setProviderUsername] = useState("");
   const [providerPassword, setProviderPassword] = useState("");
 
-  function afterLogin(res: { access_token: string; user_id: string; role: string }, name: string) {
-    login({ token: res.access_token, userId: res.user_id, role: res.role, fullName: name });
+  function afterLogin(res: { access_token: string; user_id: string; role: string; full_name: string; title?: string | null }) {
+    login({ token: res.access_token, userId: res.user_id, role: res.role, fullName: res.full_name, title: res.title });
     navigate(res.role === "provider" ? "/providers/setup" : "/providers");
   }
 
@@ -36,7 +36,7 @@ export default function Login() {
     setLoading(true);
     try {
       const res = await api.patientLogin({ identifier, password });
-      afterLogin(res, identifier);
+      afterLogin(res);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?");
     } finally {
@@ -59,7 +59,7 @@ export default function Login() {
         email: email || undefined,
         phone_number: phone || undefined,
       });
-      afterLogin(res, fullName);
+      afterLogin(res);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?");
     } finally {
@@ -73,7 +73,7 @@ export default function Login() {
     setLoading(true);
     try {
       const res = await api.providerLogin({ username: providerUsername, password: providerPassword });
-      afterLogin(res, providerUsername);
+      afterLogin(res);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?");
     } finally {

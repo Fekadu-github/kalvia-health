@@ -43,7 +43,10 @@ export default function AppShell() {
           )}
         </nav>
         <div className="sidebar-footer">
-          <div>{session?.fullName}</div>
+          <div>
+            {session?.title ? `${session.title} ` : ""}
+            {session?.fullName}
+          </div>
           <div style={{ marginBottom: "0.8em" }}>{session?.role}</div>
           <button className="btn-outline btn" onClick={logout} style={{ width: "100%" }}>
             Sign out

@@ -27,6 +27,8 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: str
     role: Role
+    full_name: str
+    title: Optional[str] = None
 
 
 class PatientSignupRequest(BaseModel):
@@ -136,6 +138,21 @@ class ProviderUpdate(BaseModel):
     """Every field optional — a provider can update just the piece
     that changed. Any change resubmits the profile for admin
     approval, so this never touches approval_status directly."""
+    specialty: Optional[str] = None
+    bio: Optional[str] = None
+    languages: Optional[str] = None
+    license_number: Optional[str] = None
+    years_experience: Optional[int] = Field(default=None, ge=0, le=80)
+    experience_summary: Optional[str] = None
+    accepting_new_cases: Optional[bool] = None
+
+
+class ProviderAdminUpdate(BaseModel):
+    """Same fields a provider can edit on themselves, plus full_name
+    and title — which only an admin can change, since they live on
+    the linked User record rather than the profile."""
+    full_name: Optional[str] = None
+    title: Optional[str] = None
     specialty: Optional[str] = None
     bio: Optional[str] = None
     languages: Optional[str] = None

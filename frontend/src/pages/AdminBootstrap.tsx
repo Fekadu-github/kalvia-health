@@ -26,7 +26,7 @@ export default function AdminBootstrap() {
         full_name: fullName,
         password,
       });
-      login({ token: res.access_token, userId: res.user_id, role: res.role, fullName });
+      login({ token: res.access_token, userId: res.user_id, role: res.role, fullName: res.full_name, title: res.title });
       navigate("/admin/providers");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?");

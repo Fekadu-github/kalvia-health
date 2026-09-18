@@ -58,7 +58,9 @@ def dev_login(payload: schemas.DevLoginRequest, db: Session = Depends(get_db)):
         db.refresh(user)
 
     token = create_access_token(user.user_id, user.role.value)
-    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+    return schemas.TokenResponse(
+        access_token=token, user_id=user.user_id, role=user.role, full_name=user.full_name, title=user.title
+    )
 
 
 @router.post("/auth/patient/signup", response_model=schemas.TokenResponse)
@@ -90,7 +92,9 @@ def patient_signup(payload: schemas.PatientSignupRequest, db: Session = Depends(
     db.commit()
 
     token = create_access_token(user.user_id, user.role.value)
-    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+    return schemas.TokenResponse(
+        access_token=token, user_id=user.user_id, role=user.role, full_name=user.full_name, title=user.title
+    )
 
 
 @router.post("/auth/patient/login", response_model=schemas.TokenResponse)
@@ -105,7 +109,9 @@ def patient_login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(401, "Invalid email/phone or password")
 
     token = create_access_token(user.user_id, user.role.value)
-    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+    return schemas.TokenResponse(
+        access_token=token, user_id=user.user_id, role=user.role, full_name=user.full_name, title=user.title
+    )
 
 
 @router.post("/auth/provider/login", response_model=schemas.TokenResponse)
@@ -115,7 +121,9 @@ def provider_login(payload: schemas.ProviderLoginRequest, db: Session = Depends(
         raise HTTPException(401, "Invalid username or password")
 
     token = create_access_token(user.user_id, user.role.value)
-    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+    return schemas.TokenResponse(
+        access_token=token, user_id=user.user_id, role=user.role, full_name=user.full_name, title=user.title
+    )
 
 
 @router.post("/auth/admin/create-provider", response_model=schemas.ProviderAccountOut)
@@ -208,7 +216,9 @@ def admin_bootstrap(payload: schemas.AdminBootstrapRequest, db: Session = Depend
     db.refresh(user)
 
     token = create_access_token(user.user_id, user.role.value)
-    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+    return schemas.TokenResponse(
+        access_token=token, user_id=user.user_id, role=user.role, full_name=user.full_name, title=user.title
+    )
 
 
 @router.post("/auth/admin/login", response_model=schemas.TokenResponse)
@@ -218,7 +228,9 @@ def admin_login(payload: schemas.AdminLoginRequest, db: Session = Depends(get_db
         raise HTTPException(401, "Invalid username or password")
 
     token = create_access_token(user.user_id, user.role.value)
-    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+    return schemas.TokenResponse(
+        access_token=token, user_id=user.user_id, role=user.role, full_name=user.full_name, title=user.title
+    )
 
 
 def _find_user_by_identifier(db: Session, identifier: str) -> User | None:
@@ -271,4 +283,6 @@ def confirm_password_reset(payload: schemas.PasswordResetConfirmRequest, db: Ses
     db.refresh(user)
 
     token = create_access_token(user.user_id, user.role.value)
-    return schemas.TokenResponse(access_token=token, user_id=user.user_id, role=user.role)
+    return schemas.TokenResponse(
+        access_token=token, user_id=user.user_id, role=user.role, full_name=user.full_name, title=user.title
+    )

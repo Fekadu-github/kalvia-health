@@ -21,7 +21,7 @@ export default function ResetPassword() {
     setLoading(true);
     try {
       const res = await api.confirmPasswordReset({ identifier, code, new_password: newPassword });
-      login({ token: res.access_token, userId: res.user_id, role: res.role, fullName: identifier });
+      login({ token: res.access_token, userId: res.user_id, role: res.role, fullName: res.full_name, title: res.title });
       navigate(res.role === "provider" ? "/providers/setup" : "/providers");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "That code didn't work — check it and try again.");

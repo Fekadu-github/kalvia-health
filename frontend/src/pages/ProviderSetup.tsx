@@ -199,6 +199,12 @@ export default function ProviderSetup() {
   return (
     <div style={{ maxWidth: 520 }}>
       <h2>{existing ? "My provider profile" : "Set up your provider profile"}</h2>
+      {existing && (
+        <p style={{ color: "var(--ink-soft)", marginTop: "-0.6em" }}>
+          {session?.title ? `${session.title} ` : ""}
+          {session?.fullName}
+        </p>
+      )}
 
       {existing && (
         <div className="inline-form">
