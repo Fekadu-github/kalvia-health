@@ -126,6 +126,7 @@ export default function AdminOverview() {
                   )}
                   <div>
                     <div className="list-row-title">
+                      {po.user.title ? `${po.user.title} ` : ""}
                       {po.user.full_name} · {po.provider.specialty.replace(/_/g, " ")}
                     </div>
                     <div className="list-row-meta">

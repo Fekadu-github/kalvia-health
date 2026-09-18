@@ -58,7 +58,13 @@ export default function ProviderDirectory() {
               />
             )}
             <div style={{ flex: 1 }}>
-              <div className="list-row-title">{p.specialty.replace(/_/g, " ")}</div>
+              <div className="list-row-title">
+                {p.title ? `${p.title} ` : ""}
+                {p.full_name}
+              </div>
+              <div className="list-row-meta" style={{ fontStyle: "italic" }}>
+                {p.specialty.replace(/_/g, " ")}
+              </div>
               <div className="list-row-meta">
                 {p.bio || "No bio provided."} {p.languages ? `· Speaks ${p.languages}` : ""}
                 {p.years_experience != null ? ` · ${p.years_experience} yrs experience` : ""}

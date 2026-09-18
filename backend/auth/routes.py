@@ -132,6 +132,7 @@ def create_provider_account(
     user = User(
         username=payload.username,
         full_name=payload.full_name,
+        title=payload.title,
         role=Role.provider,
         password_hash=hash_password(payload.password),
     )
@@ -159,7 +160,10 @@ def create_provider_account(
     db.commit()
 
     return schemas.ProviderAccountOut(
-        username=user.username, full_name=user.full_name, provider_id=provider_profile.provider_id
+        username=user.username,
+        full_name=user.full_name,
+        title=user.title,
+        provider_id=provider_profile.provider_id,
     )
 
 

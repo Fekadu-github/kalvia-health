@@ -109,6 +109,7 @@ export interface PasswordResetConfirmPayload {
 export interface ProviderCreatePayload {
   username: string;
   full_name: string;
+  title?: string;
   password: string;
   specialty: string;
   bio?: string;
@@ -121,6 +122,7 @@ export interface ProviderCreatePayload {
 export interface ProviderAccount {
   username: string;
   full_name: string;
+  title?: string | null;
   provider_id: string;
 }
 
@@ -155,6 +157,8 @@ export interface TokenResponse {
 export interface Provider {
   provider_id: string;
   user_id?: string; // present only on the full (admin/provider-self) view, not the patient-facing view
+  full_name: string;
+  title?: string | null;
   specialty: string;
   bio: string | null;
   languages: string | null;
@@ -267,6 +271,7 @@ export interface AdminPayment extends Payment {
 export interface AdminUserSummary {
   user_id: string;
   full_name: string;
+  title?: string | null;
   username: string;
   email: string | null;
   phone_number: string | null;

@@ -6,6 +6,7 @@ export default function AdminCreateProvider() {
   const { session } = useAuth();
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
+  const [title, setTitle] = useState("");
   const [password, setPassword] = useState("");
   const [specialty, setSpecialty] = useState("");
   const [bio, setBio] = useState("");
@@ -27,6 +28,7 @@ export default function AdminCreateProvider() {
       const account = await api.createProviderAccount(session.token, {
         username,
         full_name: fullName,
+        title: title || undefined,
         password,
         specialty,
         bio: bio || undefined,
@@ -38,6 +40,7 @@ export default function AdminCreateProvider() {
       setCreated(account);
       setUsername("");
       setFullName("");
+      setTitle("");
       setPassword("");
       setSpecialty("");
       setBio("");
@@ -66,7 +69,10 @@ export default function AdminCreateProvider() {
 
       {created && (
         <div className="inline-form" style={{ borderColor: "var(--primary)" }}>
-          <strong>Account created for {created.full_name}</strong>
+          <strong>
+          Account created for {created.title ? `${created.title} ` : ""}
+          {created.full_name}
+        </strong>
           <p style={{ marginBottom: 0 }}>
             Username: <code>{created.username}</code> — share this and the password you just set with the provider.
           </p>
@@ -85,6 +91,16 @@ export default function AdminCreateProvider() {
             <label htmlFor="fullName">Full name</label>
             <input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
           </div>
+        </div>
+        <div className="field">
+          <label htmlFor="title">Title (optional)</label>
+          <input
+            id="title"
+            placeholder="e.g. Dr., Prof."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            style={{ maxWidth: "12em" }}
+          />
         </div>
         <div className="field">
           <label htmlFor="password">Password</label>

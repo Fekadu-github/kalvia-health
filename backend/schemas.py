@@ -105,6 +105,7 @@ class MessageResponse(BaseModel):
 class ProviderCreateByAdmin(BaseModel):
     username: str
     full_name: str
+    title: Optional[str] = None  # e.g. "Dr.", "Prof."
     password: str = Field(min_length=8)
     specialty: str
     bio: Optional[str] = None
@@ -117,6 +118,7 @@ class ProviderCreateByAdmin(BaseModel):
 class ProviderAccountOut(BaseModel):
     username: str
     full_name: str
+    title: Optional[str] = None
     provider_id: str
 
 
@@ -150,6 +152,8 @@ class ProviderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     provider_id: str
     user_id: str
+    full_name: str
+    title: Optional[str] = None
     specialty: str
     bio: Optional[str]
     languages: Optional[str]
@@ -164,11 +168,13 @@ class ProviderOut(BaseModel):
 
 
 class ProviderPublicOut(BaseModel):
-    """What a patient sees in the directory — specialty, bio,
+    """What a patient sees in the directory — name, specialty, bio,
     languages, and the experience summary, but never the license
     number or the approval workflow state."""
     model_config = ConfigDict(from_attributes=True)
     provider_id: str
+    full_name: str
+    title: Optional[str] = None
     specialty: str
     bio: Optional[str]
     languages: Optional[str]
@@ -279,6 +285,7 @@ class AdminUserSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     user_id: str
     full_name: str
+    title: Optional[str] = None
     username: str
     email: Optional[str] = None
     phone_number: Optional[str] = None

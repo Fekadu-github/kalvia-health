@@ -34,6 +34,7 @@ class User(Base):
     user_id = Column(String, primary_key=True, default=lambda: gen_id("user"))
     username = Column(String, unique=True, nullable=False)
     full_name = Column(String, nullable=False)
+    title = Column(String, nullable=True)  # e.g. "Dr.", "Prof." — prefixed onto full_name for providers
     email = Column(String, unique=True, nullable=True)
     phone_number = Column(String, unique=True, nullable=True)  # for SMS/voice, and patient login
     password_hash = Column(String, nullable=True)  # set for patient signup + admin-issued provider accounts
@@ -86,6 +87,18 @@ class ProviderProfile(Base):
     approved_by_user_id = Column(String, ForeignKey("users.user_id"), nullable=True)
 
     user = relationship("User", back_populates="provider_profile", foreign_keys=[user_id])
+
+    @property
+    def full_name(self):
+        """Pulled from the linked User record — providers don't store
+        their own name on the profile itself."""
+        return self.user.full_name if self.user else None
+
+    @property
+    def title(self):
+        """Pulled from the linked User record, e.g. "Dr." — optional,
+        so profiles created before this field existed just show None."""
+        return self.user.title if self.user else None
 
     @property
     def photo_url(self):
