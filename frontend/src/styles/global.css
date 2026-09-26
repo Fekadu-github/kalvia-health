@@ -21,6 +21,10 @@ html, body, #root {
   height: 100%;
 }
 
+html {
+  scroll-padding-top: env(safe-area-inset-top, 0px);
+}
+
 body {
   margin: 0;
   background-color: var(--bg);
@@ -185,7 +189,8 @@ label {
     width: 100%;
     flex-direction: row;
     align-items: center;
-    padding: 0.9em 1.2em;
+    padding: calc(0.9em + env(safe-area-inset-top, 0px)) calc(1.2em + env(safe-area-inset-right, 0px)) 0.9em
+      calc(1.2em + env(safe-area-inset-left, 0px));
     border-right: none;
     border-bottom: 1px solid var(--line);
     overflow-x: auto;
