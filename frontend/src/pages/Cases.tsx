@@ -29,7 +29,7 @@ export default function Cases() {
   const count = (st: CaseFilter) => (st === "all" ? cases.length : cases.filter((c) => c.status === st).length);
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = cases
-    .filter((c) => (filter === "all" || c.status === filter) && words.every((w) => c.reason.toLowerCase().includes(w)))
+    .filter((c) => (filter === "all" || c.status === filter) && words.every((w) => `${c.case_number ?? ""} ${c.reason}`.toLowerCase().includes(w)))
     .sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at));
 
   return (
@@ -37,9 +37,16 @@ export default function Cases() {
       <h2>My cases</h2>
       {error && <p className="error-text">{error}</p>}
 
+      {session?.role === "patient" && (
+        <p style={{ color: "var(--ink-soft)", marginTop: 0 }}>
+          Each case has its own case number. You'll pick it when you pay a fee.{" "}
+          <Link to="/providers">Open a new case</Link>
+        </p>
+      )}
+
       {cases.length > 0 && (
         <div className="list-tools">
-          <SearchField value={q} onChange={setQ} placeholder="Search your cases…" />
+          <SearchField value={q} onChange={setQ} placeholder="Search by case number or reason…" />
           <Chips
             label="Filter cases by status"
             value={filter}
@@ -68,7 +75,10 @@ export default function Cases() {
         shown.map((c) => (
           <Link key={c.case_id} to={`/cases/${c.case_id}`} style={{ textDecoration: "none", color: "inherit" }}>
             <div className={"list-row" + (c.status === "open" && session?.role === "provider" ? " attn-row" : "")}>
-              <div className="list-row-title">{c.reason}</div>
+              <div className="list-row-title">
+                {c.case_number && <span style={{ fontVariantNumeric: "tabular-nums" }}>{c.case_number} · </span>}
+                {c.reason}
+              </div>
               <div className="list-row-meta">
                 <span className={`status-pill ${c.status}`}>{c.status.replace(/_/g, " ")}</span>
                 {" · Opened "}

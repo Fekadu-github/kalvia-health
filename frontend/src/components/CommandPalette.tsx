@@ -70,7 +70,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     const pages: Hit[] = navFor(session?.role).map((i) => ({ id: "p:" + i.key, group: "Go to", icon: i.icon, title: i.label, sub: `G then ${i.chord.toUpperCase()}`, to: i.to }));
     const caseHits: [number, Hit][] = [...cases]
       .sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at))
-      .map((c) => [words.length ? rank(`${c.reason} ${c.status} ${c.case_id}`, c.reason, words) : 1, { id: "c:" + c.case_id, group: "Cases", icon: "cases", title: c.reason, sub: `${c.status.replace(/_/g, " ")} · opened ${new Date(c.created_at).toLocaleDateString()}`, to: `/cases/${c.case_id}`, tag: c.status }]);
+      .map((c) => [words.length ? rank(`${c.case_number ?? ""} ${c.reason} ${c.status} ${c.case_id}`, c.reason, words) : 1, { id: "c:" + c.case_id, group: "Cases", icon: "cases", title: c.reason, sub: `${c.case_number ? c.case_number + " · " : ""}${c.status.replace(/_/g, " ")} · opened ${new Date(c.created_at).toLocaleDateString()}`, to: `/cases/${c.case_id}`, tag: c.status }]);
     if (!words.length) {
       const g = [{ key: "Go to", items: pages }];
       const recent = q(caseHits, 4);

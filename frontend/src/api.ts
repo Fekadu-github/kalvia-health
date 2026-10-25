@@ -181,6 +181,7 @@ export interface Provider {
 
 export interface Case {
   case_id: string;
+  case_number: string | null; // readable reference, e.g. "KH-2026-000042" — null only on very old rows
   patient_id: string;
   provider_id: string;
   status: "open" | "in_follow_up" | "closed";
@@ -260,6 +261,7 @@ export interface Payment {
   patient_id: string;
   payment_type: PaymentType;
   case_id: string | null;
+  case_number: string | null;
   amount: string | null;
   reference_note: string | null;
   status: PaymentStatus;
@@ -285,6 +287,7 @@ export interface AdminUserSummary {
 
 export interface AdminCaseSummary {
   case_id: string;
+  case_number: string | null;
   status: "open" | "in_follow_up" | "closed";
   reason: string;
   created_at: string;
@@ -389,6 +392,8 @@ export const api = {
   getAdminSummary: (token: string) => request<AdminSummary>("/admin/summary", {}, token),
 
   listMyCases: (token: string) => request<Case[]>("/cases", {}, token),
+
+  getCase: (token: string, caseId: string) => request<Case>(`/cases/${caseId}`, {}, token),
 
   createCase: (token: string, payload: { provider_id: string; reason: string }) =>
     request<Case>("/cases", { method: "POST", body: JSON.stringify(payload) }, token),

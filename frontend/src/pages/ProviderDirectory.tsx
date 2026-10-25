@@ -100,6 +100,10 @@ export default function ProviderDirectory() {
                 <div style={{ marginTop: "0.7em" }}>
                   {openingFor === p.provider_id ? (
                     <div>
+                      <p style={{ color: "var(--ink-soft)", fontSize: "0.82rem", margin: "0 0 0.5em" }}>
+                        Opening a case is free and gives you a case number straight away. Consultation fees are
+                        paid afterwards, using that number.
+                      </p>
                       <textarea
                         placeholder="Briefly describe why you'd like to see this provider"
                         value={reason}

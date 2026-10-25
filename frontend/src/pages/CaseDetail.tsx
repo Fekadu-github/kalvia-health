@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { api, Appointment, CaseNote, ConsultationType, Prescription, Triage, ApiError } from "../api";
+import { Link, useParams } from "react-router-dom";
+import { api, Appointment, Case, CaseNote, ConsultationType, Prescription, Triage, ApiError } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { formatWhen } from "../utils";
 
@@ -489,11 +489,20 @@ function PrescriptionsSection({ caseId }: { caseId: string }) {
 export default function CaseDetail() {
   const { caseId } = useParams<{ caseId: string }>();
   const { session } = useAuth();
+  const [theCase, setTheCase] = useState<Case | null>(null);
   const [notes, setNotes] = useState<CaseNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    if (!session || !caseId) return;
+    api
+      .getCase(session.token, caseId)
+      .then(setTheCase)
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load this case"));
+  }, [session, caseId]);
 
   function loadNotes() {
     if (!session || !caseId) return;
@@ -524,6 +533,27 @@ export default function CaseDetail() {
 
   return (
     <div>
+      {theCase && (
+        <div className="inline-form" style={{ marginBottom: "1.2em" }}>
+          <div className="list-row-meta" style={{ marginTop: 0 }}>Case number</div>
+          <h2 style={{ margin: "0.1em 0 0.3em", fontVariantNumeric: "tabular-nums" }}>
+            {theCase.case_number ?? theCase.case_id}
+          </h2>
+          <div>{theCase.reason}</div>
+          <div className="list-row-meta">
+            <span className={`status-pill ${theCase.status}`}>{theCase.status.replace(/_/g, " ")}</span>
+            {" · Opened "}
+            {new Date(theCase.created_at).toLocaleDateString()}
+          </div>
+          {session?.role === "patient" && (
+            <p style={{ marginBottom: 0 }}>
+              <Link to={`/payments?case=${theCase.case_id}&type=first_consultation`}>Pay the first-consultation fee</Link>
+              {" · "}
+              <Link to={`/payments?case=${theCase.case_id}&type=video_consultation`}>Pay the video consultation fee</Link>
+            </p>
+          )}
+        </div>
+      )}
       <TriageSection caseId={caseId} />
       <hr className="hairline" />
       <AppointmentsSection caseId={caseId} />

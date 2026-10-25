@@ -19,7 +19,12 @@ from backend.database.models import (
 )
 from backend.auth.security import get_current_user
 from backend.access import get_case_or_404, assert_case_participant
-from backend.payments.rules import find_unconsumed_approved, mark_activity
+from backend.payments.rules import (
+    find_unconsumed_approved,
+    mark_activity,
+    registration_active,
+    case_has_first_consultation,
+)
 from backend import schemas
 
 router = APIRouter()
@@ -41,9 +46,12 @@ def request_appointment(
     consultations get a Jitsi room right away, so it's ready the
     moment the provider confirms.
 
-    Two gates before this succeeds:
+    Gates before this succeeds:
     - the patient on the case must have a national ID/passport on
       file (backend/patients/routes.py's upload endpoint)
+    - an active (admin-approved, not lapsed) registration fee
+    - this case's first-consultation fee, approved by an admin —
+      consumed by the first appointment booked on the case
     - a video appointment additionally needs an unconsumed,
       admin-approved video_consultation payment for this case
     """
@@ -57,6 +65,25 @@ def request_appointment(
             "This patient needs to upload a national ID or passport before an appointment can be booked.",
         )
 
+    if not registration_active(db, patient_profile):
+        raise HTTPException(
+            402,
+            "Registration fee required (or has lapsed after 90 days of inactivity). "
+            "Submit a registration payment and wait for admin approval before booking.",
+        )
+
+    first_consultation_payment = None
+    if not case_has_first_consultation(db, case.case_id):
+        first_consultation_payment = find_unconsumed_approved(
+            db, patient_profile.patient_id, PaymentType.first_consultation, case_id=case.case_id
+        )
+        if not first_consultation_payment:
+            raise HTTPException(
+                402,
+                f"First-consultation fee required for case {case.case_number or case.case_id}. "
+                "Submit a first_consultation payment for this case and wait for admin approval before booking.",
+            )
+
     video_payment = None
     if payload.consultation_type == ConsultationType.video:
         video_payment = find_unconsumed_approved(
@@ -65,8 +92,8 @@ def request_appointment(
         if not video_payment:
             raise HTTPException(
                 402,
-                "Video consultation fee required. Submit a video_consultation payment for this case "
-                "and wait for admin approval before booking.",
+                f"Video consultation fee required for case {case.case_number or case.case_id}. "
+                "Submit a video_consultation payment for this case and wait for admin approval before booking.",
             )
 
     appointment = Appointment(
@@ -82,10 +109,14 @@ def request_appointment(
 
     db.add(appointment)
 
+    now = datetime.utcnow()
+    if first_consultation_payment:
+        first_consultation_payment.case_id = case.case_id
+        first_consultation_payment.consumed_at = now
     if video_payment:
         video_payment.case_id = case.case_id
-        video_payment.consumed_at = datetime.utcnow()
-        mark_activity(db, patient_profile)
+        video_payment.consumed_at = now
+    mark_activity(db, patient_profile)  # any booked appointment counts as activity (keeps registration valid)
 
     db.commit()
     db.refresh(appointment)

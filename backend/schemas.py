@@ -214,6 +214,7 @@ class CaseCreate(BaseModel):
 class CaseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     case_id: str
+    case_number: Optional[str] = None
     patient_id: str
     provider_id: str
     status: CaseStatus
@@ -310,6 +311,7 @@ class AdminUserSummary(BaseModel):
 
 class AdminCaseSummary(BaseModel):
     case_id: str
+    case_number: Optional[str] = None
     status: CaseStatus
     reason: str
     created_at: datetime
@@ -350,6 +352,7 @@ class PaymentOut(BaseModel):
     patient_id: str
     payment_type: PaymentType
     case_id: Optional[str]
+    case_number: Optional[str] = None
     amount: Optional[str]
     reference_note: Optional[str]
     status: PaymentStatus

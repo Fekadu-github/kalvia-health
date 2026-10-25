@@ -1,7 +1,8 @@
 """
 Shared payment-eligibility helpers for anything that's gated behind
-an admin-approved payment (opening a case, booking a video
-appointment, issuing a prescription). Kept here rather than
+an admin-approved payment (booking an appointment, a video
+appointment's own fee, issuing a prescription). Opening a case itself
+is free — see backend/cases/routes.py. Kept here rather than
 duplicated in each router, same reasoning as backend/access.py.
 """
 from datetime import datetime, timedelta
@@ -70,3 +71,21 @@ def mark_activity(db: Session, patient: PatientProfile) -> None:
     case, has a video appointment booked, gets a prescription) — this
     is what keeps their registration fee valid past 90 days."""
     patient.last_active_at = datetime.utcnow()
+
+
+def case_has_first_consultation(db: Session, case_id: str) -> bool:
+    """True once a first_consultation payment has been used on this
+    case. Every case needs its own first-consultation fee before its
+    first appointment; cases opened before fees moved to booking time
+    already have theirs linked, so this returns True for them too."""
+    return (
+        db.query(Payment)
+        .filter(
+            Payment.case_id == case_id,
+            Payment.payment_type == PaymentType.first_consultation,
+            Payment.status == PaymentStatus.approved,
+            Payment.consumed_at.isnot(None),
+        )
+        .first()
+        is not None
+    )

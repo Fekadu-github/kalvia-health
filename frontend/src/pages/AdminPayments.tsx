@@ -108,7 +108,7 @@ export default function AdminPayments() {
               <span className={`status-pill ${p.status}`}>{p.status}</span>
               {p.amount && ` · ${p.amount}`}
               {p.reference_note && ` · Ref: ${p.reference_note}`}
-              {p.case_id && ` · Case ${p.case_id}`}
+              {p.case_id && ` · Case ${p.case_number ?? p.case_id}`}
               {" · " + new Date(p.created_at).toLocaleString()}
             </div>
 

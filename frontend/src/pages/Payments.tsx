@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, Payment, PatientMeOut, PaymentType } from "../api";
+import { Link, useSearchParams } from "react-router-dom";
+import { api, ApiError, Case, Payment, PatientMeOut, PaymentType } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 const PAYMENT_TYPE_LABEL: Record<PaymentType, string> = {
@@ -9,6 +10,12 @@ const PAYMENT_TYPE_LABEL: Record<PaymentType, string> = {
   prescription: "Prescription fee",
 };
 
+// Fees that must name the case they're for. first_consultation can name one
+// too, but may also be paid before choosing — it's then used by the next case.
+const CASE_REQUIRED: PaymentType[] = ["video_consultation", "prescription"];
+
+const caseLabel = (c: Case) => `${c.case_number ?? c.case_id} — ${c.reason.length > 48 ? c.reason.slice(0, 48) + "…" : c.reason}`;
+
 const STATUS_LABEL: Record<string, string> = {
   pending: "Waiting for admin approval",
   approved: "Approved",
@@ -17,8 +24,10 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function Payments() {
   const { session } = useAuth();
+  const [params] = useSearchParams(); // /payments?case=<id>&type=video_consultation (from a case page)
   const [status, setStatus] = useState<PatientMeOut | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,8 +36,11 @@ export default function Payments() {
   const [idDocUploading, setIdDocUploading] = useState(false);
   const idFileInputRef = useRef<HTMLInputElement>(null);
 
-  const [paymentType, setPaymentType] = useState<PaymentType>("registration");
-  const [caseId, setCaseId] = useState("");
+  const typeParam = params.get("type") as PaymentType | null;
+  const [paymentType, setPaymentType] = useState<PaymentType>(
+    typeParam && typeParam in PAYMENT_TYPE_LABEL ? typeParam : "registration"
+  );
+  const [caseId, setCaseId] = useState(params.get("case") ?? "");
   const [amount, setAmount] = useState("");
   const [referenceNote, setReferenceNote] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -36,19 +48,32 @@ export default function Payments() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
+  const caseRequired = CASE_REQUIRED.includes(paymentType);
+  const needsCaseField = paymentType !== "registration"; // registration is patient-level, never tied to a case
+  const blockedNoCase = caseRequired && cases.length === 0;
+
   function loadAll() {
     if (!session) return;
     setLoading(true);
-    Promise.all([api.getMyPatientStatus(session.token), api.listMyPayments(session.token)])
-      .then(([s, p]) => {
+    Promise.all([api.getMyPatientStatus(session.token), api.listMyPayments(session.token), api.listMyCases(session.token)])
+      .then(([s, p, c]) => {
         setStatus(s);
         setPayments(p);
+        setCases([...c].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)));
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load your payment status"))
       .finally(() => setLoading(false));
   }
 
   useEffect(loadAll, [session]);
+
+  // Keep the case dropdown valid: drop a stale/foreign id from the URL, and
+  // pre-pick the case when the patient only has one.
+  useEffect(() => {
+    if (loading) return; // cases haven't arrived yet — don't judge the id from the URL against an empty list
+    if (caseId && !cases.some((c) => c.case_id === caseId)) setCaseId("");
+    else if (!caseId && cases.length === 1 && CASE_REQUIRED.includes(paymentType)) setCaseId(cases[0].case_id);
+  }, [loading, cases, caseId, paymentType]);
 
   useEffect(() => {
     if (!session || !status?.has_id_document) return;
@@ -92,7 +117,7 @@ export default function Payments() {
     try {
       await api.submitPayment(session.token, {
         payment_type: paymentType,
-        case_id: caseId || undefined,
+        case_id: needsCaseField ? caseId || undefined : undefined,
         amount: amount || undefined,
         reference_note: referenceNote || undefined,
         proof: proofFile || undefined,
@@ -123,7 +148,7 @@ export default function Payments() {
         <p style={{ color: "var(--ink-soft)", marginBottom: 0 }}>
           {status?.registration_active
             ? "Your registration fee is on file and active. It stays valid as long as you keep using the service — after 90 days of no activity, it lapses and you'll need to pay it again."
-            : "Submit a registration payment below and wait for admin approval before opening a case."}
+            : "Submit a registration payment below and wait for admin approval before booking an appointment."}
         </p>
       </div>
 
@@ -190,16 +215,30 @@ export default function Payments() {
               ))}
             </select>
           </div>
-          {paymentType !== "registration" && paymentType !== "first_consultation" && (
+          {needsCaseField && (
             <div className="field">
-              <label htmlFor="caseId">Case ID</label>
-              <input
-                id="caseId"
-                value={caseId}
-                onChange={(e) => setCaseId(e.target.value)}
-                placeholder="Which case is this for? (see the case's page/URL)"
-                required
-              />
+              <label htmlFor="caseId">Case number{caseRequired ? "" : " (optional)"}</label>
+              {cases.length === 0 ? (
+                <p style={{ color: "var(--ink-soft)", fontSize: "0.85rem", margin: 0 }}>
+                  {caseRequired ? "You don't have a case yet — " : "You don't have a case yet. You can pay now and it will be applied to your next case, or "}
+                  <Link to="/providers">find a provider and open a case</Link>
+                  {caseRequired ? " first. Opening a case is free and gives you a case number right away." : "."}
+                </p>
+              ) : (
+                <>
+                  <select id="caseId" value={caseId} onChange={(e) => setCaseId(e.target.value)} required={caseRequired}>
+                    <option value="">{caseRequired ? "Choose a case…" : "No case yet — apply to my next case"}</option>
+                    {cases.map((c) => (
+                      <option key={c.case_id} value={c.case_id}>
+                        {caseLabel(c)}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ color: "var(--ink-soft)", fontSize: "0.78rem", margin: "0.4em 0 0" }}>
+                    Your case numbers are also listed on <Link to="/cases">My cases</Link>.
+                  </p>
+                </>
+              )}
             </div>
           )}
           <div className="form-row">
@@ -231,7 +270,7 @@ export default function Payments() {
               onChange={(e) => setProofFile(e.target.files?.[0] || null)}
             />
           </div>
-          <button type="submit" className="btn" disabled={submitting}>
+          <button type="submit" className="btn" disabled={submitting || blockedNoCase}>
             {submitting ? "Submitting…" : "Submit payment"}
           </button>
           {submitError && <p className="error-text">{submitError}</p>}
@@ -249,6 +288,7 @@ export default function Payments() {
               <div className="list-row-title">{PAYMENT_TYPE_LABEL[p.payment_type]}</div>
               <div className="list-row-meta">
                 <span className={`status-pill ${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                {p.case_id && ` · Case ${p.case_number ?? p.case_id}`}
                 {p.amount && ` · ${p.amount}`}
                 {" · Submitted " + new Date(p.created_at).toLocaleDateString()}
               </div>

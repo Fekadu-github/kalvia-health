@@ -379,6 +379,7 @@ export default function AdminOverview() {
                     po.cases.map((c) => (
                       <div key={c.case_id} className="note">
                         <div className="note-meta">
+                          {c.case_number && <strong>{c.case_number} · </strong>}
                           <strong>{c.patient.full_name}</strong> · <span className={`status-pill ${c.status}`}>{c.status.replace(/_/g, " ")}</span>
                           {" · Opened "}
                           {new Date(c.created_at).toLocaleDateString()}

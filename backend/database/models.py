@@ -158,6 +158,9 @@ class Case(Base):
     __tablename__ = "cases"
 
     case_id = Column(String, primary_key=True, default=lambda: gen_id("case"))
+    # Human-readable reference patients can quote and type, e.g.
+    # "KH-2026-000042". case_id stays the internal key used in URLs.
+    case_number = Column(String, unique=True, index=True, nullable=True)
     patient_id = Column(String, ForeignKey("patient_profiles.patient_id"), nullable=False)
     provider_id = Column(String, ForeignKey("provider_profiles.provider_id"), nullable=False)
     status = Column(Enum(CaseStatus), default=CaseStatus.open, nullable=False)
@@ -340,3 +343,9 @@ class Payment(Base):
     @property
     def has_proof(self):
         return self.proof_data is not None
+
+    @property
+    def case_number(self):
+        """Readable number of the linked case, for payment history and
+        the admin review queue (null until the payment is tied to one)."""
+        return self.case.case_number if self.case else None

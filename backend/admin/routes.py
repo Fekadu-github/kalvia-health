@@ -85,6 +85,7 @@ def providers_overview(db: Session = Depends(get_db), admin: User = Depends(requ
             case_summaries.append(
                 schemas.AdminCaseSummary(
                     case_id=c.case_id,
+                    case_number=c.case_number,
                     status=c.status,
                     reason=c.reason,
                     created_at=c.created_at,
