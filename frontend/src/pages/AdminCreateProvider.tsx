@@ -1,0 +1,172 @@
+import { useState } from "react";
+import { api, ApiError, ProviderAccount } from "../api";
+import { useAuth } from "../context/AuthContext";
+
+export default function AdminCreateProvider() {
+  const { session } = useAuth();
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [title, setTitle] = useState("");
+  const [password, setPassword] = useState("");
+  const [specialty, setSpecialty] = useState("");
+  const [bio, setBio] = useState("");
+  const [languages, setLanguages] = useState("");
+  const [licenseNumber, setLicenseNumber] = useState("");
+  const [yearsExperience, setYearsExperience] = useState("");
+  const [experienceSummary, setExperienceSummary] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<ProviderAccount | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!session) return;
+    setError(null);
+    setCreated(null);
+    setSubmitting(true);
+    try {
+      const account = await api.createProviderAccount(session.token, {
+        username,
+        full_name: fullName,
+        title: title || undefined,
+        password,
+        specialty,
+        bio: bio || undefined,
+        languages: languages || undefined,
+        license_number: licenseNumber || undefined,
+        years_experience: yearsExperience ? Number(yearsExperience) : undefined,
+        experience_summary: experienceSummary || undefined,
+      });
+      setCreated(account);
+      setUsername("");
+      setFullName("");
+      setTitle("");
+      setPassword("");
+      setSpecialty("");
+      setBio("");
+      setLanguages("");
+      setLicenseNumber("");
+      setYearsExperience("");
+      setExperienceSummary("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create the provider account");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (session?.role !== "admin") {
+    return <div className="empty-state">Only an admin account can access this page.</div>;
+  }
+
+  return (
+    <div>
+      <h2>Create a provider account</h2>
+      <p style={{ color: "var(--ink-soft)" }}>
+        Providers don't self-register — issue their username and password here, then hand the credentials to them
+        directly.
+      </p>
+
+      {created && (
+        <div className="inline-form" style={{ borderColor: "var(--primary)" }}>
+          <strong>
+          Account created for {created.title ? `${created.title} ` : ""}
+          {created.full_name}
+        </strong>
+          <p style={{ marginBottom: 0 }}>
+            Username: <code>{created.username}</code> — share this and the password you just set with the provider.
+          </p>
+        </div>
+      )}
+
+      {error && <p className="error-text">{error}</p>}
+
+      <form onSubmit={handleSubmit}>
+        <div className="form-row">
+          <div className="field">
+            <label htmlFor="username">Username</label>
+            <input id="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="fullName">Full name</label>
+            <input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="title">Title (optional)</label>
+          <input
+            id="title"
+            placeholder="e.g. Dr., Prof."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            style={{ maxWidth: "12em" }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={8}
+            required
+          />
+        </div>
+        <div className="form-row">
+          <div className="field">
+            <label htmlFor="specialty">Specialty</label>
+            <input id="specialty" value={specialty} onChange={(e) => setSpecialty(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="languages">Languages</label>
+            <input
+              id="languages"
+              placeholder="e.g. English, Amharic"
+              value={languages}
+              onChange={(e) => setLanguages(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="bio">Bio</label>
+          <textarea id="bio" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} />
+        </div>
+        <div className="form-row">
+          <div className="field">
+            <label htmlFor="licenseNumber">License number (optional)</label>
+            <input id="licenseNumber" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="yearsExperience">Years of experience (optional)</label>
+            <input
+              id="yearsExperience"
+              type="number"
+              min={0}
+              max={80}
+              value={yearsExperience}
+              onChange={(e) => setYearsExperience(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="experienceSummary">Experience summary (optional, shown to patients)</label>
+          <textarea
+            id="experienceSummary"
+            rows={2}
+            value={experienceSummary}
+            onChange={(e) => setExperienceSummary(e.target.value)}
+          />
+        </div>
+        <p style={{ color: "var(--ink-soft)", fontSize: "0.82rem" }}>
+          A profile you create here is auto-approved. If you leave these fields blank, the provider can fill
+          them in themselves from their profile page — that version will need your approval before patients
+          see it.
+        </p>
+        <button className="btn" type="submit" disabled={submitting}>
+          {submitting ? "Creating…" : "Create provider account"}
+        </button>
+      </form>
+    </div>
+  );
+}
