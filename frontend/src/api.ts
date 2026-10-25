@@ -246,6 +246,27 @@ export interface Triage {
   updated_at: string;
 }
 
+
+export interface EarningsTask { payment_id: string; date: string; type: string; case_id: string; case_number: string | null; amount: number; share_amount: number | null }
+export interface TypeTotal { type: string; count: number; total: number }
+export interface ProviderEarnings {
+  provider_id: string; full_name: string; specialty: string;
+  cases_opened: number; cases_worked: number; tasks_count: number;
+  completed_consultations: { type: string; count: number }[];
+  gross: number; by_type: TypeTotal[];
+  share_percent: number | null; share_amount: number | null; note: string | null;
+  notified_at: string | null; notified_amount: number | null; tasks: EarningsTask[];
+}
+export interface AdminEarnings {
+  month: string; cases_opened: number; total_received: number; received_by_type: TypeTotal[];
+  completed_consultations: { type: string; count: number }[];
+  total_provider_shares: number; platform_net: number; providers: ProviderEarnings[];
+}
+export interface MyEarnings extends ProviderEarnings {
+  notified: boolean; overall_receivable: number;
+  history: { month: string; gross: number | null; amount: number | null; notified_at: string }[];
+}
+
 export type PaymentType = "registration" | "first_consultation" | "video_consultation" | "prescription";
 export type PaymentStatus = "pending" | "approved" | "rejected";
 
@@ -490,6 +511,14 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, res.statusText);
     return res.blob();
   },
+
+  // --- Earnings ---
+  adminEarnings: (token: string, month: string) => request<AdminEarnings>(`/admin/earnings?month=${month}`, {}, token),
+  adminSetShare: (token: string, providerId: string, month: string, share_percent: number, note?: string) =>
+    request<{ ok: boolean }>(`/admin/earnings/${providerId}/${month}/share`, { method: "PUT", body: JSON.stringify({ share_percent, note }) }, token),
+  adminNotifyProvider: (token: string, providerId: string, month: string) =>
+    request<{ ok: boolean; notified_amount: number }>(`/admin/earnings/${providerId}/${month}/notify`, { method: "POST" }, token),
+  myEarnings: (token: string, month: string) => request<MyEarnings>(`/earnings/me?month=${month}`, {}, token),
 
   // --- Payments ---
   submitPayment: (

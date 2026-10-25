@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Text, Integer, LargeBinary
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Text, Integer, LargeBinary, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database.db import Base
@@ -349,3 +349,24 @@ class Payment(Base):
         """Readable number of the linked case, for payment history and
         the admin review queue (null until the payment is tied to one)."""
         return self.case.case_number if self.case else None
+
+
+class ProviderPayout(Base):
+    """
+    One row per provider per month ("YYYY-MM"). The admin types the
+    provider's share percent by hand, then notifies the provider; the
+    notified_amount is a snapshot taken at notify time so the figure
+    the provider was told never shifts afterwards.
+    """
+    __tablename__ = "provider_payouts"
+    __table_args__ = (UniqueConstraint("provider_id", "month", name="uq_provider_month"),)
+
+    payout_id = Column(String, primary_key=True, default=lambda: gen_id("po"))
+    provider_id = Column(String, ForeignKey("provider_profiles.provider_id"), nullable=False, index=True)
+    month = Column(String, nullable=False)  # "2026-10"
+    share_percent = Column(Float, nullable=True)  # set manually by admin
+    note = Column(Text, nullable=True)
+    notified_amount = Column(Float, nullable=True)
+    notified_gross = Column(Float, nullable=True)
+    notified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

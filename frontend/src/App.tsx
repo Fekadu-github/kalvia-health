@@ -15,6 +15,8 @@ import AdminCreateProvider from "./pages/AdminCreateProvider";
 import AdminOverview from "./pages/AdminOverview";
 import Payments from "./pages/Payments";
 import AdminPayments from "./pages/AdminPayments";
+import AdminEarnings from "./pages/AdminEarnings";
+import MyEarnings from "./pages/MyEarnings";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { session } = useAuth();
@@ -51,6 +53,8 @@ function AppRoutes() {
         <Route path="/admin/providers" element={<AdminCreateProvider />} />
         <Route path="/admin/overview" element={<AdminOverview />} />
         <Route path="/admin/payments" element={<AdminPayments />} />
+        <Route path="/admin/earnings" element={<AdminEarnings />} />
+        <Route path="/earnings" element={<MyEarnings />} />
         <Route path="/" element={<RoleHome />} />
       </Route>
     </Routes>

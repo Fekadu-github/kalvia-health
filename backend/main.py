@@ -13,6 +13,7 @@ from backend.appointments.routes import router as appointments_router
 from backend.prescriptions.routes import router as prescriptions_router
 from backend.triage.routes import router as triage_router
 from backend.admin.routes import router as admin_router
+from backend.earnings.routes import router as earnings_router
 
 Base.metadata.create_all(bind=engine)
 ensure_case_numbers()  # adds + backfills cases.case_number on databases created before it existed
@@ -36,6 +37,7 @@ app.include_router(appointments_router, prefix=API_PREFIX, tags=["appointments"]
 app.include_router(prescriptions_router, prefix=API_PREFIX, tags=["prescriptions"])
 app.include_router(triage_router, prefix=API_PREFIX, tags=["triage"])
 app.include_router(admin_router, prefix=API_PREFIX, tags=["admin"])
+app.include_router(earnings_router, prefix=API_PREFIX, tags=["earnings"])
 
 
 @app.get("/health")
