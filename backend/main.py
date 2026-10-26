@@ -15,7 +15,21 @@ from backend.triage.routes import router as triage_router
 from backend.admin.routes import router as admin_router
 from backend.earnings.routes import router as earnings_router
 
-Base.metadata.create_all(bind=engine)
+def _create_tables() -> None:
+    # Two instances starting at once (or a redeploy overlapping the old
+    # one) can both try to create the same new table. The loser gets
+    # "already exists" - harmless, so check again and carry on.
+    from sqlalchemy.exc import ProgrammingError
+
+    try:
+        Base.metadata.create_all(bind=engine)
+    except ProgrammingError as exc:
+        if "already exists" not in str(exc):
+            raise
+        Base.metadata.create_all(bind=engine)
+
+
+_create_tables()
 ensure_case_numbers()  # adds + backfills cases.case_number on databases created before it existed
 
 app = FastAPI(title="Kalvia Health API", version="0.4.0-phase4")
