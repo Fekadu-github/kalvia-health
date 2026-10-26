@@ -5,8 +5,7 @@ databases created before case numbers existed need this one-off
 catch-up. Safe to run on every start: it does nothing once done.
 """
 from sqlalchemy import inspect, text
-
-from backend.database.db import SessionLocal, engine
+from sqlalchemy.exc import OperationalError, ProgrammingErrorfrom backend.database.db import SessionLocal, engine
 from backend.database.models import Case
 from backend.cases.numbering import CASE_NUMBER_PREFIX
 
@@ -52,7 +51,9 @@ def ensure_case_numbers() -> None:
 
 def ensure_case_closure_columns() -> None:
     """Adds the case-closure columns to databases created before the
-    closure workflow existed. Does nothing once they are there."""
+    closure workflow existed. Safe to run on every start, and safe when
+    two instances start at the same moment (the loser's "already exists"
+    error is ignored)."""
     inspector = inspect(engine)
     if "cases" not in inspector.get_table_names():
         return
@@ -64,7 +65,14 @@ def ensure_case_closure_columns() -> None:
         "closure_admin_note": "TEXT",
         "closed_at": "TIMESTAMP",
     }
-    with engine.begin() as conn:
-        for name, kind in wanted.items():
-            if name not in have:
-                conn.execute(text(f"ALTER TABLE cases ADD COLUMN {name} {kind}"))
+    if_not_exists = "IF NOT EXISTS " if engine.dialect.name == "postgresql" else ""
+    for name, kind in wanted.items():
+        if name in have:
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE cases ADD COLUMN {if_not_exists}{name} {kind}"))
+        except (ProgrammingError, OperationalError) as exc:
+            msg = str(exc).lower()
+            if "already exists" not in msg and "duplicate column" not in msg:
+                raise
