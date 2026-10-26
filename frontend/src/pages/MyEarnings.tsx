@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, MyEarnings as Data } from "../api";
 import { useAuth } from "../context/AuthContext";
-import { money, currentMonth, TYPE_LABEL } from "../lib/money";
+import { money, currentMonth, feeLabel } from "../lib/money";
 
 export default function MyEarnings() {
   const { session } = useAuth();
@@ -27,11 +27,11 @@ export default function MyEarnings() {
         <>
           <div className="list-row">
             <div className="list-row-title">
-              {data.notified ? `Receivable for ${month}: ${money(data.share_amount)}` : `${month}: awaiting admin statement`}
+              {data.notified ? `Receivable for ${month}: ${money(data.share_total)}` : `${month}: awaiting admin statement`}
             </div>
             <div className="list-row-meta">
               Cases worked <b>{data.cases_worked}</b> · tasks done <b>{data.tasks_count}</b> · cases opened {data.cases_opened}
-              {data.notified && <> · your share <b>{data.share_percent}%</b> of {money(data.gross)}</>}
+              {data.notified && <> · fees {money(data.gross)}</>}
             </div>
             {data.note && <div className="list-row-meta">Note: {data.note}</div>}
             <div className="list-row-meta">Overall receivable (all notified months): <b>{money(data.overall_receivable)}</b></div>
@@ -40,14 +40,14 @@ export default function MyEarnings() {
           <h3>Tasks this month</h3>
           {data.tasks.length === 0 ? <div className="empty-state">No completed tasks this month.</div> : (
             <table style={{ width: "100%", fontSize: "0.92em" }}>
-              <thead><tr><th align="left">Date</th><th align="left">Task</th><th align="left">Case</th><th align="right">Received</th></tr></thead>
+              <thead><tr><th align="left">Date</th><th align="left">Task</th><th align="left">Case</th><th align="right">Your share</th></tr></thead>
               <tbody>
                 {data.tasks.map((t) => (
                   <tr key={t.payment_id}>
                     <td>{new Date(t.date).toLocaleDateString()}</td>
-                    <td>{TYPE_LABEL[t.type] ?? t.type}</td>
+                    <td>{feeLabel(t.type)}</td>
                     <td>{t.case_number ?? t.case_id}</td>
-                    <td align="right">{data.notified ? money(t.share_amount) : "—"}</td>
+                    <td align="right">{data.notified ? (t.share_percent == null ? "not shared" : `${t.share_percent}% = ${money(t.share_amount)}`) : "—"}</td>
                   </tr>
                 ))}
               </tbody>

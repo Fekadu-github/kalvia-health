@@ -370,3 +370,20 @@ class ProviderPayout(Base):
     notified_gross = Column(Float, nullable=True)
     notified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ShareRule(Base):
+    """
+    Standing percent the provider keeps for one fee type. A fee type with
+    no rule is not shared (0%) - that is how the first consultation /
+    triage fee stays with the platform. Rules apply to every month that
+    has not been notified yet; a notified month keeps its snapshot.
+    """
+    __tablename__ = "share_rules"
+    __table_args__ = (UniqueConstraint("provider_id", "payment_type", name="uq_provider_fee_type"),)
+
+    rule_id = Column(String, primary_key=True, default=lambda: gen_id("sr"))
+    provider_id = Column(String, ForeignKey("provider_profiles.provider_id"), nullable=False, index=True)
+    payment_type = Column(String, nullable=False)
+    percent = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

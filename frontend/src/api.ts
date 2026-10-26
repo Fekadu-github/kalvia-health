@@ -247,18 +247,19 @@ export interface Triage {
 }
 
 
-export interface EarningsTask { payment_id: string; date: string; type: string; case_id: string; case_number: string | null; amount: number; share_amount: number | null }
+export interface EarningsTask { payment_id: string; date: string; type: string; case_id: string; case_number: string | null; amount: number; share_percent: number | null; share_amount: number | null }
+export interface ShareLine { type: string; count: number; fees: number; rule_id: string | null; percent: number | null; share: number }
 export interface TypeTotal { type: string; count: number; total: number }
 export interface ProviderEarnings {
   provider_id: string; full_name: string; specialty: string;
   cases_opened: number; cases_worked: number; tasks_count: number;
   completed_consultations: { type: string; count: number }[];
   gross: number; by_type: TypeTotal[];
-  share_percent: number | null; share_amount: number | null; note: string | null;
+  lines: ShareLine[]; shared_fees: number; share_total: number | null; note: string | null;
   notified_at: string | null; notified_amount: number | null; tasks: EarningsTask[];
 }
 export interface AdminEarnings {
-  month: string; cases_opened: number; total_received: number; received_by_type: TypeTotal[];
+  month: string; fee_types: string[]; cases_opened: number; total_received: number; received_by_type: TypeTotal[];
   completed_consultations: { type: string; count: number }[];
   total_provider_shares: number; platform_net: number; providers: ProviderEarnings[];
 }
@@ -514,8 +515,14 @@ export const api = {
 
   // --- Earnings ---
   adminEarnings: (token: string, month: string) => request<AdminEarnings>(`/admin/earnings?month=${month}`, {}, token),
-  adminSetShare: (token: string, providerId: string, month: string, share_percent: number, note?: string) =>
-    request<{ ok: boolean }>(`/admin/earnings/${providerId}/${month}/share`, { method: "PUT", body: JSON.stringify({ share_percent, note }) }, token),
+  adminAddRule: (token: string, provider_id: string, payment_type: string, percent: number) =>
+    request<{ ok: boolean }>(`/admin/share-rules`, { method: "POST", body: JSON.stringify({ provider_id, payment_type, percent }) }, token),
+  adminEditRule: (token: string, ruleId: string, percent: number, payment_type?: string) =>
+    request<{ ok: boolean }>(`/admin/share-rules/${ruleId}`, { method: "PUT", body: JSON.stringify({ percent, payment_type }) }, token),
+  adminDeleteRule: (token: string, ruleId: string) =>
+    request<{ ok: boolean }>(`/admin/share-rules/${ruleId}`, { method: "DELETE" }, token),
+  adminSetNote: (token: string, providerId: string, month: string, note: string) =>
+    request<{ ok: boolean }>(`/admin/earnings/${providerId}/${month}/note`, { method: "PUT", body: JSON.stringify({ note }) }, token),
   adminNotifyProvider: (token: string, providerId: string, month: string) =>
     request<{ ok: boolean; notified_amount: number }>(`/admin/earnings/${providerId}/${month}/notify`, { method: "POST" }, token),
   myEarnings: (token: string, month: string) => request<MyEarnings>(`/earnings/me?month=${month}`, {}, token),

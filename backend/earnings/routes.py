@@ -20,13 +20,15 @@ from backend.auth.security import require_role
 from backend.database.db import get_db
 from backend.database.models import (
     Appointment, AppointmentStatus, Case, Payment, PaymentStatus, PaymentType,
-    ProviderPayout, ProviderProfile, Role, User,
+    ProviderPayout, ProviderProfile, Role, ShareRule, User,
 )
 from backend.notifications.email import send_email
 
 router = APIRouter()
 
-TASK_TYPES = [PaymentType.first_consultation, PaymentType.video_consultation, PaymentType.prescription]
+# Every fee type except registration can be shared. A fee type added to
+# PaymentType in future shows up in the admin dropdown automatically.
+TASK_TYPES = [t for t in PaymentType if t != PaymentType.registration]
 
 
 def parse_amount(raw: Optional[str]) -> float:
@@ -114,9 +116,32 @@ def provider_month(db: Session, provider: ProviderProfile, month: str, start, en
     payout = (
         db.query(ProviderPayout).filter(ProviderPayout.provider_id == provider.provider_id, ProviderPayout.month == month).first()
     )
-    percent = payout.share_percent if payout else None
+    rules = {r.payment_type: r for r in db.query(ShareRule).filter(ShareRule.provider_id == provider.provider_id).all()}
     for t in tasks:
-        t["share_amount"] = _share(t["amount"], percent)
+        r = rules.get(t["type"])
+        t["share_percent"] = r.percent if r else None
+        t["share_amount"] = round(t["amount"] * (r.percent if r else 0) / 100.0, 2)
+
+    # One calculation line per rule the admin has added.
+    by_key = {}
+    for t in tasks:
+        d = by_key.setdefault(t["type"], {"count": 0, "fees": 0.0})
+        d["count"] += 1
+        d["fees"] += t["amount"]
+    lines = []
+    for r in sorted(rules.values(), key=lambda r: r.created_at or datetime.min):
+        d = by_key.get(r.payment_type, {"count": 0, "fees": 0.0})
+        fees = round(d["fees"], 2)
+        lines.append({
+            "type": r.payment_type,
+            "count": d["count"],
+            "fees": fees,
+            "rule_id": r.rule_id,
+            "percent": r.percent,
+            "share": round(fees * r.percent / 100.0, 2),
+        })
+    share_total = round(sum(l["share"] for l in lines), 2)
+    shared_fees = round(sum(l["fees"] for l in lines), 2)
     return {
         "provider_id": provider.provider_id,
         "full_name": provider.full_name,
@@ -127,8 +152,9 @@ def provider_month(db: Session, provider: ProviderProfile, month: str, start, en
         "completed_consultations": [{"type": k, "count": v} for k, v in appts_by_type.items()],
         "gross": gross,
         "by_type": _by_type(tasks),
-        "share_percent": percent,
-        "share_amount": _share(gross, percent),
+        "lines": lines,
+        "shared_fees": shared_fees,
+        "share_total": share_total,
         "note": payout.note if payout else None,
         "notified_at": payout.notified_at.isoformat() if payout and payout.notified_at else None,
         "notified_amount": payout.notified_amount if payout else None,
@@ -161,9 +187,10 @@ def admin_earnings(month: Optional[str] = None, db: Session = Depends(get_db), a
         appt_counts[a.consultation_type.value] = appt_counts.get(a.consultation_type.value, 0) + 1
 
     total_received = round(sum(r["amount"] for r in received_rows), 2)
-    shares_set = [p["share_amount"] for p in providers if p["share_amount"] is not None]
+    shares_set = [p["notified_amount"] if p["notified_at"] else p["share_total"] for p in providers]
     return {
         "month": month,
+        "fee_types": [t.value for t in TASK_TYPES],
         "cases_opened": cases_total,
         "total_received": total_received,
         "received_by_type": _by_type(received_rows),
@@ -172,11 +199,6 @@ def admin_earnings(month: Optional[str] = None, db: Session = Depends(get_db), a
         "platform_net": round(total_received - sum(shares_set), 2),
         "providers": providers,
     }
-
-
-class ShareBody(BaseModel):
-    share_percent: float
-    note: Optional[str] = None
 
 
 def _get_provider_or_404(db: Session, provider_id: str) -> ProviderProfile:
@@ -194,15 +216,71 @@ def _get_or_create_payout(db: Session, provider_id: str, month: str) -> Provider
     return payout
 
 
-@router.put("/admin/earnings/{provider_id}/{month}/share")
-def set_share(provider_id: str, month: str, body: ShareBody, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
+class RuleBody(BaseModel):
+    provider_id: str
+    payment_type: str
+    percent: float
+
+
+class RuleUpdate(BaseModel):
+    percent: float
+    payment_type: Optional[str] = None
+
+
+def _check_percent(p: float):
+    if not 0 <= p <= 100:
+        raise HTTPException(400, "Percent must be between 0 and 100")
+
+
+@router.post("/admin/share-rules")
+def add_rule(body: RuleBody, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
+    _get_provider_or_404(db, body.provider_id)
+    if body.payment_type not in {t.value for t in TASK_TYPES}:
+        raise HTTPException(400, "This fee type cannot be shared")
+    _check_percent(body.percent)
+    if db.query(ShareRule).filter(ShareRule.provider_id == body.provider_id, ShareRule.payment_type == body.payment_type).first():
+        raise HTTPException(409, "A percent already exists for this fee type - edit it instead")
+    db.add(ShareRule(provider_id=body.provider_id, payment_type=body.payment_type, percent=body.percent))
+    db.commit()
+    return {"ok": True}
+
+
+@router.put("/admin/share-rules/{rule_id}")
+def edit_rule(rule_id: str, body: RuleUpdate, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
+    _check_percent(body.percent)
+    rule = db.query(ShareRule).filter(ShareRule.rule_id == rule_id).first()
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+    if body.payment_type and body.payment_type != rule.payment_type:
+        if body.payment_type not in {t.value for t in TASK_TYPES}:
+            raise HTTPException(400, "This fee type cannot be shared")
+        if db.query(ShareRule).filter(ShareRule.provider_id == rule.provider_id, ShareRule.payment_type == body.payment_type).first():
+            raise HTTPException(409, "There is already a line for this fee type")
+        rule.payment_type = body.payment_type
+    rule.percent = body.percent
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/admin/share-rules/{rule_id}")
+def delete_rule(rule_id: str, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
+    rule = db.query(ShareRule).filter(ShareRule.rule_id == rule_id).first()
+    if not rule:
+        raise HTTPException(404, "Rule not found")
+    db.delete(rule)
+    db.commit()
+    return {"ok": True}
+
+
+class NoteBody(BaseModel):
+    note: Optional[str] = None
+
+
+@router.put("/admin/earnings/{provider_id}/{month}/note")
+def set_note(provider_id: str, month: str, body: NoteBody, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
     month, _, _ = month_bounds(month)
     _get_provider_or_404(db, provider_id)
-    if not 0 <= body.share_percent <= 100:
-        raise HTTPException(400, "Share percent must be between 0 and 100")
-    payout = _get_or_create_payout(db, provider_id, month)
-    payout.share_percent = body.share_percent
-    payout.note = body.note
+    _get_or_create_payout(db, provider_id, month).note = body.note
     db.commit()
     return {"ok": True}
 
@@ -212,21 +290,23 @@ def notify_provider(provider_id: str, month: str, db: Session = Depends(get_db),
     month, start, end = month_bounds(month)
     prov = _get_provider_or_404(db, provider_id)
     data = provider_month(db, prov, month, start, end)
-    if data["share_percent"] is None:
-        raise HTTPException(400, "Set the share percent first")
     payout = _get_or_create_payout(db, provider_id, month)
-    payout.notified_amount = data["share_amount"]
+    payout.notified_amount = data["share_total"]
     payout.notified_gross = data["gross"]
     payout.notified_at = datetime.utcnow()
     db.commit()
+    lines = "\n".join(
+        f"  {l['type']}: {l['count']} x, fees {l['fees']:.2f}, "
+        + (f"{l['percent']}% = {l['share']:.2f}" if l["percent"] is not None else "not shared")
+        for l in data["lines"]
+    )
     try:
         if not prov.user.email:
             raise ValueError("provider has no email")
         send_email(
             prov.user.email,
             f"Your earnings statement for {month}",
-            f"Hello {prov.full_name},\n\nYour amount receivable for {month} is {data['share_amount']:.2f} "
-            f"({data['share_percent']}% of {data['gross']:.2f}) across {data['cases_worked']} case(s).\n"
+            f"Hello {prov.full_name},\n\nYour amount receivable for {month} is {data['share_total']:.2f}.\n\n{lines}\n"
             f"{('Note: ' + data['note']) if data['note'] else ''}\nSee the Earnings page for the per-task breakdown.",
         )
     except Exception as exc:  # the in-app notice is what matters; never fail on email
@@ -244,17 +324,20 @@ def my_earnings(month: Optional[str] = None, db: Session = Depends(get_db), user
     data = provider_month(db, prov, month, start, end)
     notified = data["notified_at"] is not None
     if not notified:
-        # Amounts are only shown once the admin has set the % and notified.
-        data["share_percent"] = None
-        data["share_amount"] = None
+        # Amounts are only shown once the admin has notified.
+        data["share_total"] = None
+        data["lines"] = []
         for t in data["tasks"]:
             t["share_amount"] = None
+            t["share_percent"] = None
     history = (
         db.query(ProviderPayout)
         .filter(ProviderPayout.provider_id == prov.provider_id, ProviderPayout.notified_at.isnot(None))
         .order_by(ProviderPayout.month.desc())
         .all()
     )
+    if notified:
+        data["share_total"] = data["notified_amount"]  # what the provider was told
     data["notified"] = notified
     data["history"] = [{"month": h.month, "gross": h.notified_gross, "amount": h.notified_amount, "notified_at": h.notified_at.isoformat()} for h in history]
     data["overall_receivable"] = round(sum(h.notified_amount or 0 for h in history), 2)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, ApiError, AdminEarnings as Data, ProviderEarnings } from "../api";
+import { api, ApiError, AdminEarnings as Data, ProviderEarnings, ShareLine } from "../api";
 import { useAuth } from "../context/AuthContext";
-import { money, currentMonth, TYPE_LABEL } from "../lib/money";
+import { money, currentMonth, TYPE_LABEL, feeLabel } from "../lib/money";
 
 function TypeTable({ rows }: { rows: { type: string; count: number; total: number }[] }) {
   if (!rows.length) return <p className="list-row-meta">No fees this month.</p>;
@@ -20,23 +20,67 @@ function TypeTable({ rows }: { rows: { type: string; count: number; total: numbe
   );
 }
 
-function ProviderCard({ p, month, onChanged }: { p: ProviderEarnings; month: string; onChanged: () => void }) {
+type Run = (fn: (token: string) => Promise<unknown>) => void;
+
+// One calculation line. rule === null means a new, not-yet-saved line.
+function LineRow({ l, providerId, feeTypes, usedTypes, busy, run, onCancel }: {
+  l: ShareLine | null; providerId: string; feeTypes: string[]; usedTypes: string[];
+  busy: boolean; run: Run; onCancel?: () => void;
+}) {
+  const [type, setType] = useState(l?.type ?? "");
+  const [val, setVal] = useState(l?.percent?.toString() ?? "");
+  const n = parseFloat(val);
+  const valid = !isNaN(n) && n >= 0 && n <= 100;
+  const options = feeTypes.filter((t) => t === l?.type || !usedTypes.includes(t));
+  const fees = l?.fees ?? 0;
+  const preview = valid ? Math.round(fees * n) / 100 : 0;
+  const dirty = l ? type !== l.type || n !== l.percent : true;
+  return (
+    <tr>
+      <td>
+        <select value={type} onChange={(e) => setType(e.target.value)}>
+          {!l && <option value="">Select fee…</option>}
+          {options.map((t) => <option key={t} value={t}>{feeLabel(t)}</option>)}
+        </select>
+      </td>
+      <td>{l?.count ?? "—"}</td>
+      <td style={{ textAlign: "right" }}>{l ? money(l.fees) : "—"}</td>
+      <td style={{ width: 90 }}>
+        <input type="number" min={0} max={100} step="0.01" placeholder="%" value={val} onChange={(e) => setVal(e.target.value)} />
+      </td>
+      <td style={{ textAlign: "right" }}>{l ? money(preview) : "—"}</td>
+      <td style={{ whiteSpace: "nowrap" }}>
+        {l ? (
+          <>
+            <button className="btn btn-outline" disabled={busy || !valid || !dirty} onClick={() => run((t) => api.adminEditRule(t, l.rule_id!, n, type))}>Save</button>{" "}
+            <button className="btn btn-outline" disabled={busy} onClick={() => run((t) => api.adminDeleteRule(t, l.rule_id!))}>Delete</button>
+          </>
+        ) : (
+          <>
+            <button className="btn btn-outline" disabled={busy || !valid || !type} onClick={() => run(async (t) => { await api.adminAddRule(t, providerId, type, n); onCancel?.(); })}>Add</button>{" "}
+            <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
+          </>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function ProviderCard({ p, month, feeTypes, onChanged }: { p: ProviderEarnings; month: string; feeTypes: string[]; onChanged: () => void }) {
   const { session } = useAuth();
-  const [percent, setPercent] = useState(p.share_percent?.toString() ?? "");
   const [note, setNote] = useState(p.note ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const used = p.lines.map((l) => l.type);
 
-  const pct = parseFloat(percent);
-  const preview = isNaN(pct) ? null : Math.round(p.gross * pct) / 100;
-
-  async function run(fn: () => Promise<unknown>) {
+  async function run(fn: (token: string) => Promise<unknown>) {
     if (!session) return;
     setBusy(true);
     setErr(null);
     try {
-      await fn();
+      await fn(session.token);
       onChanged();
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Something went wrong");
@@ -45,47 +89,66 @@ function ProviderCard({ p, month, onChanged }: { p: ProviderEarnings; month: str
     }
   }
 
+  const total = p.share_total ?? 0;
+  const changedSinceNotify = p.notified_at && p.notified_amount !== total;
+
   return (
     <div className="list-row">
       <div className="list-row-title">{p.full_name} <span className="list-row-meta">· {p.specialty}</span></div>
       <div className="list-row-meta">
         Cases opened {p.cases_opened} · cases worked {p.cases_worked} · tasks {p.tasks_count} · gross fees <b>{money(p.gross)}</b>
       </div>
-      <TypeTable rows={p.by_type} />
       {p.completed_consultations.length > 0 && (
         <div className="list-row-meta">
           Completed consultations: {p.completed_consultations.map((c) => `${TYPE_LABEL[c.type] ?? c.type} ${c.count}`).join(", ")}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "0.6em", flexWrap: "wrap", alignItems: "flex-end", marginTop: "0.8em" }}>
-        <div className="field" style={{ marginBottom: 0, width: 110 }}>
-          <label>Share %</label>
-          <input type="number" min={0} max={100} step="0.01" value={percent} onChange={(e) => setPercent(e.target.value)} />
-        </div>
-        <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 140 }}>
-          <label>Note (optional)</label>
-          <input value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-        <div><b>Provider gets: {money(preview)}</b></div>
+      <h4 style={{ marginBottom: 4 }}>Share calculation</h4>
+      <p className="list-row-meta" style={{ marginTop: 0 }}>Registration fees are never shared. Add a line for each fee type the provider shares in.</p>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr><th align="left">Fee type</th><th align="left">Tasks</th><th align="right">Fees</th><th align="left">Share %</th><th align="right">Provider share</th><th /></tr>
+        </thead>
+        <tbody>
+          {p.lines.map((l) => (
+            <LineRow key={l.rule_id! + l.type + l.percent} l={l} providerId={p.provider_id} feeTypes={feeTypes} usedTypes={used} busy={busy} run={run} />
+          ))}
+          {adding && <LineRow l={null} providerId={p.provider_id} feeTypes={feeTypes} usedTypes={used} busy={busy} run={run} onCancel={() => setAdding(false)} />}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={2}><b>Sum</b></td>
+            <td style={{ textAlign: "right" }}><b>{money(p.shared_fees)}</b></td>
+            <td />
+            <td style={{ textAlign: "right" }}><b>{money(total)}</b></td>
+            <td />
+          </tr>
+        </tfoot>
+      </table>
+      {!adding && used.length < feeTypes.length && (
+        <button className="btn btn-outline" style={{ marginTop: "0.5em" }} onClick={() => setAdding(true)}>+ Add line</button>
+      )}
+      <div className="list-row-meta">
+        Gross fees {money(p.gross)} · shared fees {money(p.shared_fees)} · kept by platform {money(Math.round((p.gross - total) * 100) / 100)}. Lines stay in force every month until you change them.
       </div>
 
-      <div style={{ marginTop: "0.6em", display: "flex", gap: "0.6em", flexWrap: "wrap" }}>
-        <button className="btn-outline btn" disabled={busy || isNaN(pct)} onClick={() => run(() => api.adminSetShare(session!.token, p.provider_id, month, pct, note || undefined))}>
-          Save %
+      <div className="field" style={{ marginTop: "0.6em" }}>
+        <label>Note to provider (optional)</label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== (p.note ?? "") && run((t) => api.adminSetNote(t, p.provider_id, month, note))} />
+      </div>
+
+      <div style={{ display: "flex", gap: "0.6em", flexWrap: "wrap" }}>
+        <button className="btn" disabled={busy} onClick={() => run((t) => api.adminNotifyProvider(t, p.provider_id, month))}>
+          {p.notified_at ? "Re-notify" : "Notify provider"} · {money(total)}
         </button>
-        <button
-          className="btn"
-          disabled={busy || p.share_percent == null || p.share_percent !== pct}
-          title={p.share_percent !== pct ? "Save the % first" : ""}
-          onClick={() => run(() => api.adminNotifyProvider(session!.token, p.provider_id, month))}
-        >
-          {p.notified_at ? "Re-notify provider" : "Notify provider"}
-        </button>
-        <button className="btn-outline btn" onClick={() => setOpen(!open)}>{open ? "Hide tasks" : `Tasks (${p.tasks_count})`}</button>
+        <button className="btn btn-outline" onClick={() => setOpen(!open)}>{open ? "Hide tasks" : `Tasks (${p.tasks_count})`}</button>
       </div>
       {p.notified_at && (
-        <div className="list-row-meta">Notified {new Date(p.notified_at).toLocaleString()} — {money(p.notified_amount)}</div>
+        <div className="list-row-meta">
+          Notified {new Date(p.notified_at).toLocaleString()} — {money(p.notified_amount)}
+          {changedSinceNotify && <b> · the current total differs, re-notify to update the provider</b>}
+        </div>
       )}
       {err && <p className="error-text">{err}</p>}
 
@@ -95,10 +158,10 @@ function ProviderCard({ p, month, onChanged }: { p: ProviderEarnings; month: str
             {p.tasks.map((t) => (
               <tr key={t.payment_id}>
                 <td>{new Date(t.date).toLocaleDateString()}</td>
-                <td>{TYPE_LABEL[t.type] ?? t.type}</td>
+                <td>{feeLabel(t.type)}</td>
                 <td>{t.case_number ?? t.case_id}</td>
                 <td style={{ textAlign: "right" }}>{money(t.amount)}</td>
-                <td style={{ textAlign: "right" }}>{money(t.share_amount)}</td>
+                <td style={{ textAlign: "right" }}>{t.share_percent == null ? "not shared" : `${t.share_percent}% = ${money(t.share_amount)}`}</td>
               </tr>
             ))}
           </tbody>
@@ -147,7 +210,7 @@ export default function AdminEarnings() {
           </div>
           <h3>Providers</h3>
           {data.providers.length === 0 ? <div className="empty-state">No providers yet.</div> :
-            data.providers.map((p) => <ProviderCard key={p.provider_id + month + (p.share_percent ?? "")} p={p} month={month} onChanged={load} />)}
+            data.providers.map((p) => <ProviderCard feeTypes={data.fee_types} key={p.provider_id + month + p.lines.map((l) => l.percent ?? "-").join("|")} p={p} month={month} onChanged={load} />)}
         </>
       )}
     </div>

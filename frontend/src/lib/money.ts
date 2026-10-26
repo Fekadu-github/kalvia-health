@@ -10,3 +10,5 @@ export const TYPE_LABEL: Record<string, string> = {
   audio: "Audio",
   in_person: "In person",
 };
+export const feeLabel = (t: string) =>
+  TYPE_LABEL[t] ?? t.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());

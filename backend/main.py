@@ -15,6 +15,7 @@ from backend.triage.routes import router as triage_router
 from backend.admin.routes import router as admin_router
 from backend.earnings.routes import router as earnings_router
 
+
 def _create_tables() -> None:
     # Two instances starting at once (or a redeploy overlapping the old
     # one) can both try to create the same new table. The loser gets
