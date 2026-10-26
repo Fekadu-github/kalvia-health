@@ -17,6 +17,7 @@ import Payments from "./pages/Payments";
 import AdminPayments from "./pages/AdminPayments";
 import AdminEarnings from "./pages/AdminEarnings";
 import AdminReports from "./pages/AdminReports";
+import AdminClosures from "./pages/AdminClosures";
 import MyEarnings from "./pages/MyEarnings";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -56,6 +57,7 @@ function AppRoutes() {
         <Route path="/admin/payments" element={<AdminPayments />} />
         <Route path="/admin/earnings" element={<AdminEarnings />} />
         <Route path="/admin/reports" element={<AdminReports />} />
+        <Route path="/admin/closures" element={<AdminClosures />} />
         <Route path="/earnings" element={<MyEarnings />} />
         <Route path="/" element={<RoleHome />} />
       </Route>

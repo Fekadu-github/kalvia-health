@@ -46,6 +46,7 @@ export function useAttention(token: string | undefined, role: string | undefined
         const [summary, pay] = await Promise.allSettled([api.getAdminSummary(token), api.adminListPayments(token, "pending")]);
         const s = ok(summary), p = ok(pay);
         if (s) add("overview", { to: "/admin/overview", count: s.providers_pending_approval, tone: "pending", icon: "addProvider", label: `${plural(s.providers_pending_approval, "provider", "providers")} awaiting approval` });
+        if (s && s.closures_pending) add("adminClosures", { to: "/admin/closures", count: s.closures_pending, tone: "pending", icon: "review", label: `${plural(s.closures_pending, "case", "cases")} waiting to be closed` });
         if (p) add("adminPayments", { to: "/admin/payments", count: p.length, tone: "pending", icon: "review", label: `${plural(p.length, "payment", "payments")} to review` });
       } else if (role === "provider") {
         const [appts, cases, prof] = await Promise.allSettled([api.listMyAppointments(token), api.listMyCases(token), api.getMyProviderProfile(token)]);

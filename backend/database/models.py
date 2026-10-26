@@ -168,6 +168,14 @@ class Case(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Closure workflow: provider requests -> admin confirms patient status
+    # and approves (case becomes closed) or sends it back.
+    closure_status = Column(String, nullable=True)  # "requested" | "rejected" | "approved"
+    closure_summary = Column(Text, nullable=True)  # provider's closing summary
+    closure_requested_at = Column(DateTime, nullable=True)
+    closure_admin_note = Column(Text, nullable=True)  # admin's patient-status note / rejection reason
+    closed_at = Column(DateTime, nullable=True)
+
     patient = relationship("PatientProfile")
     provider = relationship("ProviderProfile")
     notes = relationship("CaseNote", back_populates="case")

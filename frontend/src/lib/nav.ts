@@ -23,6 +23,7 @@ const ALL: NavItem[] = [
   { key: "adminReports", to: "/admin/reports", label: "Fee reports", short: "Reports", icon: "overview", group: "Administration", chord: "f", roles: ["admin"] },
   { key: "overview", to: "/admin/overview", label: "Overview", short: "Overview", icon: "overview", group: "Administration", chord: "o", roles: ["admin"] },
   { key: "createProvider", to: "/admin/providers", label: "Create provider", short: "Create", icon: "addProvider", group: "Administration", chord: "n", roles: ["admin"] },
+  { key: "adminClosures", to: "/admin/closures", label: "Case closures", short: "Closures", icon: "review", group: "Administration", chord: "k", roles: ["admin"] },
   { key: "adminPayments", to: "/admin/payments", label: "Payment review", short: "Payments", icon: "review", group: "Administration", chord: "r", roles: ["admin"] },
 ];
 

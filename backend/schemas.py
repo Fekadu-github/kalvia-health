@@ -221,6 +221,11 @@ class CaseOut(BaseModel):
     reason: str
     created_at: datetime
     updated_at: datetime
+    closure_status: Optional[str] = None
+    closure_summary: Optional[str] = None
+    closure_requested_at: Optional[datetime] = None
+    closure_admin_note: Optional[str] = None
+    closed_at: Optional[datetime] = None
 
 
 class CaseNoteCreate(BaseModel):
@@ -334,6 +339,7 @@ class AdminSummary(BaseModel):
     total_cases: int
     total_appointments: int
     providers_pending_approval: int
+    closures_pending: int = 0
     cases_by_status: dict
     appointments_by_status: dict
 

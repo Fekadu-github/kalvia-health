@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, Appointment, Case, CaseNote, ConsultationType, Prescription, Triage, ApiError } from "../api";
 import { useAuth } from "../context/AuthContext";
+import CaseClosure from "../components/CaseClosure";
 import { formatWhen } from "../utils";
 
 function TriageSection({ caseId }: { caseId: string }) {
@@ -545,6 +546,10 @@ export default function CaseDetail() {
             {" · Opened "}
             {new Date(theCase.created_at).toLocaleDateString()}
           </div>
+          <CaseClosure
+            theCase={theCase}
+            onChanged={() => session && caseId && api.getCase(session.token, caseId).then(setTheCase)}
+          />
           {session?.role === "patient" && (
             <p style={{ marginBottom: 0 }}>
               <Link to={`/payments?case=${theCase.case_id}&type=first_consultation`}>Pay the first-consultation fee</Link>

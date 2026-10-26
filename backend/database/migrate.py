@@ -48,3 +48,23 @@ def ensure_case_numbers() -> None:
         db.commit()
     finally:
         db.close()
+
+
+def ensure_case_closure_columns() -> None:
+    """Adds the case-closure columns to databases created before the
+    closure workflow existed. Does nothing once they are there."""
+    inspector = inspect(engine)
+    if "cases" not in inspector.get_table_names():
+        return
+    have = {c["name"] for c in inspector.get_columns("cases")}
+    wanted = {
+        "closure_status": "VARCHAR",
+        "closure_summary": "TEXT",
+        "closure_requested_at": "TIMESTAMP",
+        "closure_admin_note": "TEXT",
+        "closed_at": "TIMESTAMP",
+    }
+    with engine.begin() as conn:
+        for name, kind in wanted.items():
+            if name not in have:
+                conn.execute(text(f"ALTER TABLE cases ADD COLUMN {name} {kind}"))

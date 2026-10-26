@@ -188,6 +188,17 @@ export interface Case {
   reason: string;
   created_at: string;
   updated_at: string;
+  closure_status: "requested" | "rejected" | "approved" | null;
+  closure_summary: string | null;
+  closure_requested_at: string | null;
+  closure_admin_note: string | null;
+  closed_at: string | null;
+}
+
+export interface ClosureItem {
+  case_id: string; case_number: string | null; reason: string; patient_id: string; provider_name: string | null;
+  opened_at: string | null; closure_summary: string | null; closure_requested_at: string | null;
+  closure_admin_note: string | null; closed_at: string | null;
 }
 
 export interface CaseNote {
@@ -333,6 +344,7 @@ export interface AdminSummary {
   total_cases: number;
   total_appointments: number;
   providers_pending_approval: number;
+  closures_pending: number;
   cases_by_status: Record<string, number>;
   appointments_by_status: Record<string, number>;
 }
@@ -513,6 +525,18 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, res.statusText);
     return res.blob();
   },
+
+  // --- Case closure ---
+  requestCaseClosure: (token: string, caseId: string, summary: string) =>
+    request<{ ok: boolean }>(`/cases/${caseId}/closure/request`, { method: "POST", body: JSON.stringify({ summary }) }, token),
+  withdrawCaseClosure: (token: string, caseId: string) =>
+    request<{ ok: boolean }>(`/cases/${caseId}/closure/withdraw`, { method: "POST" }, token),
+  adminListClosures: (token: string, status: "requested" | "closed" = "requested") =>
+    request<ClosureItem[]>(`/admin/closures?status=${status}`, {}, token),
+  adminApproveClosure: (token: string, caseId: string, patient_status: string) =>
+    request<{ ok: boolean }>(`/admin/closures/${caseId}/approve`, { method: "POST", body: JSON.stringify({ patient_status }) }, token),
+  adminRejectClosure: (token: string, caseId: string, note: string) =>
+    request<{ ok: boolean }>(`/admin/closures/${caseId}/reject`, { method: "POST", body: JSON.stringify({ note }) }, token),
 
   // --- Earnings ---
   adminPeriodReport: (token: string, start: string, end: string) =>

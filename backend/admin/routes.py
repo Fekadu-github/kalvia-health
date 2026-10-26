@@ -137,6 +137,7 @@ def admin_summary(db: Session = Depends(get_db), admin: User = Depends(require_r
         total_cases=total_cases,
         total_appointments=total_appointments,
         providers_pending_approval=providers_pending,
+        closures_pending=db.query(Case).filter(Case.closure_status == "requested").count(),
         cases_by_status=cases_by_status,
         appointments_by_status=appointments_by_status,
     )
