@@ -2,14 +2,14 @@
 Monthly earnings: cases, fees by consultation/payment type, the
 admin's manual provider share %, and the provider-facing statement.
 
-A "task" is an approved payment that has been consumed on a case
-(first consultation, video consultation, prescription). Its month is
-the month it was consumed (= when the work was done). Registration
-fees belong to the platform, not to any provider, so they appear in
-the admin totals only.
+A "task" is an approved fee (first consultation, video consultation,
+...) that belongs to a case. Its month is the month the admin approved
+the payment, and its provider is the provider of that case. Fees with
+no case yet, and registration fees, belong to the platform: they show
+in the admin totals and fee list but are never shared.
 """
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -69,7 +69,7 @@ def _share(gross: float, percent: Optional[float]) -> Optional[float]:
     return None if percent is None else round(gross * percent / 100.0, 2)
 
 
-def provider_month(db: Session, provider: ProviderProfile, month: str, start, end) -> dict:
+def provider_month(db: Session, provider: ProviderProfile, month: Optional[str], start, end) -> dict:
     rows = (
         db.query(Payment, Case)
         .join(Case, Payment.case_id == Case.case_id)
@@ -77,16 +77,16 @@ def provider_month(db: Session, provider: ProviderProfile, month: str, start, en
             Case.provider_id == provider.provider_id,
             Payment.status == PaymentStatus.approved,
             Payment.payment_type.in_(TASK_TYPES),
-            Payment.consumed_at >= start,
-            Payment.consumed_at < end,
+            Payment.reviewed_at >= start,
+            Payment.reviewed_at < end,
         )
-        .order_by(Payment.consumed_at.asc())
+        .order_by(Payment.reviewed_at.asc())
         .all()
     )
     tasks = [
         {
             "payment_id": p.payment_id,
-            "date": p.consumed_at.isoformat(),
+            "date": p.reviewed_at.isoformat(),
             "type": p.payment_type.value,
             "case_id": c.case_id,
             "case_number": c.case_number,
@@ -115,6 +115,7 @@ def provider_month(db: Session, provider: ProviderProfile, month: str, start, en
 
     payout = (
         db.query(ProviderPayout).filter(ProviderPayout.provider_id == provider.provider_id, ProviderPayout.month == month).first()
+        if month else None
     )
     rules = {r.payment_type: r for r in db.query(ShareRule).filter(ShareRule.provider_id == provider.provider_id).all()}
     for t in tasks:
@@ -163,16 +164,31 @@ def provider_month(db: Session, provider: ProviderProfile, month: str, start, en
 
 
 # ---------------- Admin ----------------
-@router.get("/admin/earnings")
-def admin_earnings(month: Optional[str] = None, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
-    month, start, end = month_bounds(month)
-
+def build_report(db: Session, start: datetime, end: datetime, month: Optional[str], label: str) -> dict:
+    """Totals, fee list and provider shares for [start, end). month is only
+    given for a calendar-month view (it unlocks notified snapshots)."""
     received = (
         db.query(Payment)
         .filter(Payment.status == PaymentStatus.approved, Payment.reviewed_at >= start, Payment.reviewed_at < end)
         .all()
     )
     received_rows = [{"type": p.payment_type.value, "amount": parse_amount(p.amount)} for p in received]
+
+    case_ids = [p.case_id for p in received if p.case_id]
+    case_map = {c.case_id: c for c in db.query(Case).filter(Case.case_id.in_(case_ids)).all()} if case_ids else {}
+    prov_map = {pr.provider_id: pr.full_name for pr in db.query(ProviderProfile).all()}
+    fees = []
+    for p in sorted(received, key=lambda x: x.reviewed_at or datetime.min):
+        c = case_map.get(p.case_id) if p.case_id else None
+        fees.append({
+            "payment_id": p.payment_id,
+            "date": p.reviewed_at.isoformat() if p.reviewed_at else None,
+            "type": p.payment_type.value,
+            "amount": parse_amount(p.amount),
+            "case_id": c.case_id if c else None,
+            "case_number": (c.case_number or c.case_id) if c else None,
+            "provider_name": prov_map.get(c.provider_id) if c else None,
+        })
 
     providers = [provider_month(db, p, month, start, end) for p in db.query(ProviderProfile).all()]
     cases_total = db.query(Case).filter(Case.created_at >= start, Case.created_at < end).count()
@@ -189,9 +205,13 @@ def admin_earnings(month: Optional[str] = None, db: Session = Depends(get_db), a
     total_received = round(sum(r["amount"] for r in received_rows), 2)
     shares_set = [p["notified_amount"] if p["notified_at"] else p["share_total"] for p in providers]
     return {
-        "month": month,
+        "month": label,
+        "period_start": start.date().isoformat(),
+        "period_end": (end - timedelta(days=1)).date().isoformat(),
         "fee_types": [t.value for t in TASK_TYPES],
         "cases_opened": cases_total,
+        "cases_with_fees": len(set(case_ids)),
+        "fees": fees,
         "total_received": total_received,
         "received_by_type": _by_type(received_rows),
         "completed_consultations": [{"type": k, "count": v} for k, v in appt_counts.items()],
@@ -199,6 +219,48 @@ def admin_earnings(month: Optional[str] = None, db: Session = Depends(get_db), a
         "platform_net": round(total_received - sum(shares_set), 2),
         "providers": providers,
     }
+
+
+@router.get("/admin/earnings")
+def admin_earnings(month: Optional[str] = None, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
+    month, start, end = month_bounds(month)
+    return build_report(db, start, end, month, month)
+
+
+def _parse_range(start: str, end: str):
+    try:
+        s = datetime.strptime(start, "%Y-%m-%d")
+        e = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)  # end date is inclusive
+    except ValueError:
+        raise HTTPException(400, "Dates must look like 2026-10-31")
+    if e <= s:
+        raise HTTPException(400, "End date must not be before start date")
+    return s, e
+
+
+@router.get("/admin/reports/earnings")
+def period_report(start: str, end: str, db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
+    s, e = _parse_range(start, end)
+    return build_report(db, s, e, None, f"{start} to {end}")
+
+
+@router.get("/admin/reports/earnings/export")
+def export_report(start: str, end: str, format: str = "pdf", db: Session = Depends(get_db), admin: User = Depends(require_role(Role.admin))):
+    from fastapi.responses import Response
+    from backend.earnings.export import build_pdf, build_xlsx
+
+    s, e = _parse_range(start, end)
+    report = build_report(db, s, e, None, f"{start} to {end}")
+    name = f"earnings-report_{start}_to_{end}"
+    if format == "xlsx":
+        return Response(
+            build_xlsx(report),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{name}.xlsx"'},
+        )
+    if format == "pdf":
+        return Response(build_pdf(report), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{name}.pdf"'})
+    raise HTTPException(400, "format must be pdf or xlsx")
 
 
 def _get_provider_or_404(db: Session, provider_id: str) -> ProviderProfile:

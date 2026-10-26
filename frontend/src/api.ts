@@ -258,8 +258,9 @@ export interface ProviderEarnings {
   lines: ShareLine[]; shared_fees: number; share_total: number | null; note: string | null;
   notified_at: string | null; notified_amount: number | null; tasks: EarningsTask[];
 }
+export interface FeeRow { payment_id: string; date: string | null; type: string; amount: number; case_id: string | null; case_number: string | null; provider_name: string | null }
 export interface AdminEarnings {
-  month: string; fee_types: string[]; cases_opened: number; total_received: number; received_by_type: TypeTotal[];
+  month: string; fee_types: string[]; cases_with_fees: number; fees: FeeRow[]; cases_opened: number; total_received: number; received_by_type: TypeTotal[];
   completed_consultations: { type: string; count: number }[];
   total_provider_shares: number; platform_net: number; providers: ProviderEarnings[];
 }
@@ -514,6 +515,20 @@ export const api = {
   },
 
   // --- Earnings ---
+  adminPeriodReport: (token: string, start: string, end: string) =>
+    request<AdminEarnings>(`/admin/reports/earnings?start=${start}&end=${end}`, {}, token),
+  adminDownloadReport: async (token: string, start: string, end: string, format: "pdf" | "xlsx") => {
+    const res = await fetch(`${API_BASE}/admin/reports/earnings/export?start=${start}&end=${end}&format=${format}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new ApiError(res.status, "Could not create the report");
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `earnings-report_${start}_to_${end}.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   adminEarnings: (token: string, month: string) => request<AdminEarnings>(`/admin/earnings?month=${month}`, {}, token),
   adminAddRule: (token: string, provider_id: string, payment_type: string, percent: number) =>
     request<{ ok: boolean }>(`/admin/share-rules`, { method: "POST", body: JSON.stringify({ provider_id, payment_type, percent }) }, token),

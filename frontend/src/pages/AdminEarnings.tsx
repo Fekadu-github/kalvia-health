@@ -197,11 +197,30 @@ export default function AdminEarnings() {
           <div className="list-row">
             <div className="list-row-title">Overall — {data.month}</div>
             <div className="list-row-meta">
-              Cases opened <b>{data.cases_opened}</b> · total received <b>{money(data.total_received)}</b> ·
+              Cases opened <b>{data.cases_opened}</b> · cases with fees <b>{data.cases_with_fees}</b> · total received <b>{money(data.total_received)}</b> ·
               provider shares <b>{money(data.total_provider_shares)}</b> · platform net <b>{money(data.platform_net)}</b>
             </div>
             <h4>Fees received by type</h4>
             <TypeTable rows={data.received_by_type} />
+            <h4>All fees received</h4>
+            {data.fees.length === 0 ? <p className="list-row-meta">No approved fees this month.</p> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", fontSize: "0.9em" }}>
+                  <thead><tr><th align="left">Date</th><th align="left">Fee</th><th align="left">Case</th><th align="left">Provider</th><th align="right">Amount</th></tr></thead>
+                  <tbody>
+                    {data.fees.map((f) => (
+                      <tr key={f.payment_id}>
+                        <td>{f.date ? new Date(f.date).toLocaleDateString() : "—"}</td>
+                        <td>{feeLabel(f.type)}</td>
+                        <td>{f.case_number ?? (f.type === "registration" ? "—" : "no case yet")}</td>
+                        <td>{f.provider_name ?? "—"}</td>
+                        <td align="right">{money(f.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {data.completed_consultations.length > 0 && (
               <div className="list-row-meta">
                 Completed consultations: {data.completed_consultations.map((c) => `${TYPE_LABEL[c.type] ?? c.type} ${c.count}`).join(", ")}
