@@ -197,7 +197,7 @@ export default function AdminEarnings() {
           <div className="list-row">
             <div className="list-row-title">Overall — {data.month}</div>
             <div className="list-row-meta">
-              Cases opened <b>{data.cases_opened}</b> · cases with fees <b>{data.cases_with_fees}</b> · total received <b>{money(data.total_received)}</b> ·
+              Cases <b>{data.cases_active}</b> (opened {data.cases_opened}) · cases with fees <b>{data.cases_with_fees}</b> · total received <b>{money(data.total_received)}</b> ·
               provider shares <b>{money(data.total_provider_shares)}</b> · platform net <b>{money(data.platform_net)}</b>
             </div>
             <h4>Fees received by type</h4>

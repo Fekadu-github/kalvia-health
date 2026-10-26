@@ -69,20 +69,42 @@ def _share(gross: float, percent: Optional[float]) -> Optional[float]:
     return None if percent is None else round(gross * percent / 100.0, 2)
 
 
-def provider_month(db: Session, provider: ProviderProfile, month: Optional[str], start, end) -> dict:
-    rows = (
-        db.query(Payment, Case)
-        .join(Case, Payment.case_id == Case.case_id)
-        .filter(
-            Case.provider_id == provider.provider_id,
-            Payment.status == PaymentStatus.approved,
-            Payment.payment_type.in_(TASK_TYPES),
-            Payment.reviewed_at >= start,
-            Payment.reviewed_at < end,
-        )
+def fee_records(db: Session, start: datetime, end: datetime):
+    """Approved payments approved in [start, end), each paired with its case.
+
+    A payment normally carries its case_id. A first-consultation fee is paid
+    before any case exists, so when case_id is empty we tie it to the
+    patient's case: the first one opened at/after the payment, else their
+    earliest case. Registration fees never belong to a case.
+    """
+    pays = (
+        db.query(Payment)
+        .filter(Payment.status == PaymentStatus.approved, Payment.reviewed_at >= start, Payment.reviewed_at < end)
         .order_by(Payment.reviewed_at.asc())
         .all()
     )
+    cases_by_id = {c.case_id: c for c in db.query(Case).all()}
+    by_patient: Dict[str, list] = {}
+    for c in sorted(cases_by_id.values(), key=lambda c: c.created_at or datetime.min):
+        by_patient.setdefault(c.patient_id, []).append(c)
+    out = []
+    for p in pays:
+        case = cases_by_id.get(p.case_id) if p.case_id else None
+        if case is None and p.payment_type != PaymentType.registration:
+            mine = by_patient.get(p.patient_id, [])
+            paid_at = p.created_at or p.reviewed_at
+            case = next((c for c in mine if c.created_at and paid_at and c.created_at >= paid_at), None) or (mine[0] if mine else None)
+        out.append((p, case))
+    return out
+
+
+def provider_month(db: Session, provider: ProviderProfile, month: Optional[str], start, end, records=None) -> dict:
+    if records is None:
+        records = fee_records(db, start, end)
+    rows = [
+        (p, c) for p, c in records
+        if c is not None and c.provider_id == provider.provider_id and p.payment_type in TASK_TYPES
+    ]
     tasks = [
         {
             "payment_id": p.payment_id,
@@ -167,19 +189,14 @@ def provider_month(db: Session, provider: ProviderProfile, month: Optional[str],
 def build_report(db: Session, start: datetime, end: datetime, month: Optional[str], label: str) -> dict:
     """Totals, fee list and provider shares for [start, end). month is only
     given for a calendar-month view (it unlocks notified snapshots)."""
-    received = (
-        db.query(Payment)
-        .filter(Payment.status == PaymentStatus.approved, Payment.reviewed_at >= start, Payment.reviewed_at < end)
-        .all()
-    )
+    records = fee_records(db, start, end)
+    received = [p for p, _ in records]
     received_rows = [{"type": p.payment_type.value, "amount": parse_amount(p.amount)} for p in received]
 
-    case_ids = [p.case_id for p in received if p.case_id]
-    case_map = {c.case_id: c for c in db.query(Case).filter(Case.case_id.in_(case_ids)).all()} if case_ids else {}
+    case_ids = [c.case_id for _, c in records if c is not None]
     prov_map = {pr.provider_id: pr.full_name for pr in db.query(ProviderProfile).all()}
     fees = []
-    for p in sorted(received, key=lambda x: x.reviewed_at or datetime.min):
-        c = case_map.get(p.case_id) if p.case_id else None
+    for p, c in records:
         fees.append({
             "payment_id": p.payment_id,
             "date": p.reviewed_at.isoformat() if p.reviewed_at else None,
@@ -190,8 +207,9 @@ def build_report(db: Session, start: datetime, end: datetime, month: Optional[st
             "provider_name": prov_map.get(c.provider_id) if c else None,
         })
 
-    providers = [provider_month(db, p, month, start, end) for p in db.query(ProviderProfile).all()]
-    cases_total = db.query(Case).filter(Case.created_at >= start, Case.created_at < end).count()
+    providers = [provider_month(db, p, month, start, end, records) for p in db.query(ProviderProfile).all()]
+    opened_ids = {c.case_id for c in db.query(Case).filter(Case.created_at >= start, Case.created_at < end).all()}
+    cases_total = len(opened_ids)
 
     appts = (
         db.query(Appointment)
@@ -211,6 +229,7 @@ def build_report(db: Session, start: datetime, end: datetime, month: Optional[st
         "fee_types": [t.value for t in TASK_TYPES],
         "cases_opened": cases_total,
         "cases_with_fees": len(set(case_ids)),
+        "cases_active": len(opened_ids | set(case_ids)),
         "fees": fees,
         "total_received": total_received,
         "received_by_type": _by_type(received_rows),

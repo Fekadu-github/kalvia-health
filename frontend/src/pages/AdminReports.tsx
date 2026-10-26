@@ -88,7 +88,7 @@ export default function AdminReports() {
           <div className="list-row">
             <div className="list-row-title">{data.period_start} to {data.period_end}</div>
             <div className="list-row-meta">
-              Cases opened <b>{data.cases_opened}</b> · cases with fees <b>{data.cases_with_fees}</b> · total fees <b>{money(data.total_received)}</b> ·
+              Cases <b>{data.cases_active}</b> (opened {data.cases_opened}) · cases with fees <b>{data.cases_with_fees}</b> · total fees <b>{money(data.total_received)}</b> ·
               provider shares <b>{money(data.total_provider_shares)}</b> · platform net <b>{money(data.platform_net)}</b>
             </div>
             <div style={{ display: "flex", gap: "0.6em", marginTop: "0.5em" }}>

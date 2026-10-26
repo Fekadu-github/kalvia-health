@@ -260,19 +260,9 @@ export interface ProviderEarnings {
 }
 export interface FeeRow { payment_id: string; date: string | null; type: string; amount: number; case_id: string | null; case_number: string | null; provider_name: string | null }
 export interface AdminEarnings {
-  month: string;
-  period_start: string;
-  period_end: string;
-  fee_types: string[];
-  cases_opened: number;
-  cases_with_fees: number;
-  fees: FeeRow[];
-  total_received: number;
-  received_by_type: TypeTotal[];
+  month: string; period_start: string; period_end: string; fee_types: string[]; cases_with_fees: number; cases_active: number; fees: FeeRow[]; cases_opened: number; total_received: number; received_by_type: TypeTotal[];
   completed_consultations: { type: string; count: number }[];
-  total_provider_shares: number;
-  platform_net: number;
-  providers: ProviderEarnings[];
+  total_provider_shares: number; platform_net: number; providers: ProviderEarnings[];
 }
 export interface MyEarnings extends ProviderEarnings {
   notified: boolean; overall_receivable: number;
